@@ -1,4 +1,4 @@
-// kotoba-app.jsx — shell with custom cursor + magnetic effects
+// kotoba-app.jsx — shell with onboarding gate, custom cursor, sound
 const { useState: uS, useEffect: uE, useRef: uR } = React;
 
 const NAV = [
@@ -7,6 +7,27 @@ const NAV = [
   { key:'progress',label:'Progress', jp:'記録',   icon:I.chart },
   { key:'profile', label:'Profile',  jp:'自分',   icon:I.user  },
 ];
+
+/* ── Global sound on all button clicks ── */
+function useSoundOnButtons() {
+  uE(() => {
+    function onDown(e) {
+      const el = e.target.closest('button');
+      if (!el) return;
+      try {
+        const a = new Audio(CLICK_SFX);
+        a.volume = 0.38;
+        a.play().catch(() => {});
+      } catch(e) {}
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+    };
+  }, []);
+}
 
 /* ── Custom cursor ── */
 function Cursor() {
@@ -28,23 +49,20 @@ function Cursor() {
     };
 
     document.addEventListener('mousemove', onMove);
-    document.querySelectorAll('button, a, .feat-card, .level-card.unlocked, .review-row, .ach-card, .settings-row, .stat-pill, .deck')
+    document.querySelectorAll('button, a, .feat-card, .level-card.unlocked, .review-row, .ach-card, .settings-row, .stat-pill, .ob-option, .ob-level-row, .ob-goal-card')
       .forEach(el => { el.addEventListener('mouseenter', onEnter); el.addEventListener('mouseleave', onLeave); });
 
-    // observe DOM for new interactive elements
     const obs = new MutationObserver(() => {
-      document.querySelectorAll('button, a, .feat-card, .level-card.unlocked, .review-row, .ach-card')
+      document.querySelectorAll('button, a, .feat-card, .level-card.unlocked, .review-row, .ach-card, .ob-option, .ob-level-row, .ob-goal-card')
         .forEach(el => { el.addEventListener('mouseenter', onEnter); el.addEventListener('mouseleave', onLeave); });
     });
     obs.observe(document.body, { childList: true, subtree: true });
 
     function loop() {
-      // dot follows exactly
       if (dotRef.current) {
         dotRef.current.style.left = pos.current.x + 'px';
         dotRef.current.style.top  = pos.current.y + 'px';
       }
-      // ring lerps behind
       ring.current.x += (pos.current.x - ring.current.x) * 0.14;
       ring.current.y += (pos.current.y - ring.current.y) * 0.14;
       if (ringRef.current) {
@@ -130,9 +148,12 @@ function BottomNav({ view, go }) {
 
 /* ── Root App ── */
 function App() {
+  const [onboarded, setOnboarded] = uS(() => !!localStorage.getItem('kotoba_onboarded'));
   const [view,    setView]    = uS(() => localStorage.getItem('kotoba_v') || 'home');
   const [result,  setResult]  = uS(null);
   const [gameKey, setGameKey] = uS(0);
+
+  useSoundOnButtons();
 
   function go(v) {
     if (v==='play') setGameKey(k=>k+1);
@@ -140,6 +161,21 @@ function App() {
     if (v!=='results') localStorage.setItem('kotoba_v', v);
     const m = document.querySelector('.main');
     if (m) m.scrollTo({ top:0, behavior:'smooth' });
+  }
+
+  function handleOnboardingDone(userData) {
+    setOnboarded(true);
+    go('learn');
+  }
+
+  if (!onboarded) {
+    return (
+      <div className="app">
+        <Cursor/>
+        <div className="paper-tex"/>
+        <Onboarding onDone={handleOnboardingDone}/>
+      </div>
+    );
   }
 
   return (

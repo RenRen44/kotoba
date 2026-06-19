@@ -1,4 +1,4 @@
-// kotoba-game.jsx — upgraded with dramatic animations
+// kotoba-game.jsx
 function Confetti({ trigger }) {
   const bits = React.useMemo(() => {
     const cols = ['#F3B24E','#F1855A','#5FAE8E','#FBF6EC','#8C82C9','#F7C4A8'];
@@ -32,7 +32,25 @@ function Confetti({ trigger }) {
   );
 }
 
-function Game({ onComplete, onExit }) {
+// ── Save a single answer to localStorage ──
+function saveAnswer(word, correct, level) {
+  try {
+    const existing = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
+    existing.push({
+      word,
+      correct,
+      level,
+      timestamp: Date.now(),
+    });
+    localStorage.setItem('kotoba_answers', JSON.stringify(existing));
+  } catch(e) {
+    console.warn('Could not save answer:', e);
+  }
+}
+
+function Game({ onComplete, onExit, level = 5 }) {
+  const [session, setSession] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
   const [idx,     setIdx]     = React.useState(0);
   const [sel,     setSel]     = React.useState(null);
   const [status,  setStatus]  = React.useState('idle');
@@ -44,9 +62,27 @@ function Game({ onComplete, onExit }) {
   const [conf,    setConf]    = React.useState(0);
   const [wordKey, setWordKey] = React.useState(0);
 
-  const session = React.useRef(
-    [...BANK].sort(() => Math.random() - 0.5).slice(0, SESSION_SIZE)
-  ).current;
+  React.useEffect(() => {
+    fetchQuiz(level, SESSION_SIZE).then(questions => {
+      setSession(questions);
+      setLoading(false);
+    });
+  }, [level]);
+
+  if (loading || !session) {
+    return (
+      <div className="game-wrap">
+        <div className="game-stage" style={{alignItems:'center',justifyContent:'center'}}>
+          <div style={{textAlign:'center',color:'var(--cream-2)'}}>
+            <div style={{fontFamily:'var(--jp)',fontSize:48,marginBottom:16,
+              animation:'watermarkDrift 2s ease-in-out infinite alternate'}}>読</div>
+            <div style={{fontSize:14}}>Loading quiz...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const q    = session[idx];
   const keys = ['A','B','C','D'];
 
@@ -55,17 +91,33 @@ function Game({ onComplete, onExit }) {
     setSel(i);
     const right = i === q.c;
     setStatus(right ? 'correct' : 'wrong');
+
+    // ── Save to localStorage ──
+    saveAnswer(q.w, right, q.lv);
+
     if (right) {
       const nc = combo + 1;
       setCombo(nc); setBest(b => Math.max(b, nc));
       setCorrect(c => c + 1); setConf(t => t + 1);
       setBump(true); setTimeout(() => setBump(false), 420);
-    } else { setCombo(0); }
+    } else {
+      setCombo(0);
+    }
 
     setTimeout(() => {
       const nd = done + 1;
       if (nd >= SESSION_SIZE) {
-        onComplete({ correct: correct + (right?1:0), total: SESSION_SIZE, best: Math.max(best, right?combo+1:combo) });
+        onComplete({
+          correct: correct + (right?1:0),
+          total: SESSION_SIZE,
+          best: Math.max(best, right?combo+1:combo),
+          wrongWords: session
+            .filter((_, si) => si < nd)
+            .filter((w, si) => {
+              // we don't track per-question easily here so just pass session
+              return false;
+            }),
+        });
         return;
       }
       setDone(nd); setIdx(v => v+1); setSel(null); setStatus('idle'); setWordKey(k => k+1);
@@ -77,16 +129,13 @@ function Game({ onComplete, onExit }) {
   return (
     <div className="game-wrap">
       <div className="game-stage">
-        {/* morphing glow */}
         <div className={'game-glow' + (status==='correct'?' correct':status==='wrong'?' wrong':'')}/>
         <Confetti trigger={conf}/>
 
-        {/* top */}
         <div className="game-top">
           <button className="icon-btn" onClick={onExit} style={{color:'var(--cream-2)'}}>{I.close(20)}</button>
           <div className="bar" style={{height:11,background:'rgba(255,255,255,0.08)',position:'relative'}}>
             <i className="peach" style={{width:`${progress}%`}}/>
-            {/* glowing tip on progress bar */}
             {progress > 0 && progress < 100 && (
               <span style={{
                 position:'absolute',top:'50%',left:`${progress}%`,
@@ -103,7 +152,6 @@ function Game({ onComplete, onExit }) {
           </span>
         </div>
 
-        {/* prompt + combo */}
         <div className="q-meta">
           <span className="q-prompt">Choose the meaning <span>意味は？</span></span>
           <span className={'combo'+(bump?' bump':'')} style={{opacity:combo>=2?1:0.32}}>
@@ -113,10 +161,8 @@ function Game({ onComplete, onExit }) {
           </span>
         </div>
 
-        {/* drifting watermark */}
         <div className="q-watermark">{q.w[0]}</div>
 
-        {/* word — dramatic entrance each card */}
         <div className="q-zone">
           <div key={wordKey} className="word-enter" style={{textAlign:'center'}}>
             <div className="q-level-pill">{q.lv}</div>
@@ -125,12 +171,11 @@ function Game({ onComplete, onExit }) {
           </div>
         </div>
 
-        {/* answers */}
         <div className="answers">
           {q.opts.map((opt, i) => {
             let cls = 'ans';
             if (status !== 'idle') {
-              if (i === q.c)   cls += ' correct';
+              if (i === q.c)    cls += ' correct';
               else if (i===sel) cls += ' wrong';
               else              cls += ' dim';
             }
@@ -149,4 +194,4 @@ function Game({ onComplete, onExit }) {
     </div>
   );
 }
-Object.assign(window, { Game });
+Object.assign(window, { Game, saveAnswer });
