@@ -34,6 +34,7 @@ function Confetti({ trigger }) {
 
 // ── Save a single answer to localStorage ──
 function saveAnswer(word, correct, level) {
+  updateSM2(word, correct); // ← SM-2
   try {
     const existing = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
     existing.push({
@@ -114,7 +115,6 @@ function Game({ onComplete, onExit, level = 5 }) {
           wrongWords: session
             .filter((_, si) => si < nd)
             .filter((w, si) => {
-              // we don't track per-question easily here so just pass session
               return false;
             }),
         });
