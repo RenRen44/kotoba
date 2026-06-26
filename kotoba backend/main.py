@@ -1,11 +1,12 @@
 # main.py — Kotoba FastAPI Backend
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-import sqlite3, json, random, requests
+import sqlite3, json, random, requests, os
+import numpy as np
+import xgboost as xgb
 
 app = FastAPI()
 
-# Allow frontend to call this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,12 +16,21 @@ app.add_middleware(
 
 DB = "jmdict.db"
 
+# ── Load XGBoost model once at startup ──
+_model = None
+def get_model():
+    global _model
+    if _model is None:
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'readiness_model.json')
+        _model = xgb.XGBClassifier()
+        _model.load_model(model_path)
+    return _model
+
 def get_db():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     return conn
 
-# ── cache JLPT words so we don't hammer the API every request ──
 _jlpt_cache = {}
 
 def get_jlpt_words(level: int):
@@ -34,7 +44,6 @@ def get_jlpt_words(level: int):
     return words
 
 def enrich_with_jmdict(word_text: str, db):
-    """Look up a word in JMdict and return extra data"""
     row = db.execute(
         "SELECT * FROM words WHERE kanji = ? OR kana = ? LIMIT 1",
         (word_text, word_text)
@@ -50,7 +59,6 @@ def enrich_with_jmdict(word_text: str, db):
     }
 
 def get_distractors(correct_meaning: str, pos_tags: list, count: int, db):
-    """Get wrong answers with same part of speech"""
     if pos_tags:
         pos_str = pos_tags[0]
         rows = db.execute("""
@@ -92,7 +100,6 @@ def root():
 
 @app.get("/words")
 def get_words(level: int = 5, limit: int = 50):
-    """Get JLPT words enriched with JMdict data"""
     jlpt_words = get_jlpt_words(level)
     db = get_db()
 
@@ -114,7 +121,6 @@ def get_words(level: int = 5, limit: int = 50):
 
 @app.get("/quiz")
 def get_quiz(level: int = 5, count: int = 8):
-    """Get quiz questions with smart distractors"""
     jlpt_words = get_jlpt_words(level)
     db = get_db()
 
@@ -149,7 +155,6 @@ def get_quiz(level: int = 5, count: int = 8):
 
 @app.get("/word/{word}")
 def get_word(word: str):
-    """Look up a single word — full details"""
     db = get_db()
     row = db.execute(
         "SELECT * FROM words WHERE kanji = ? OR kana = ? LIMIT 1",
@@ -176,15 +181,53 @@ def get_word(word: str):
 
 @app.post("/answer")
 def save_answer(payload: dict):
-    """Save a user's answer — localStorage for now, DB later"""
     return {"saved": True, "word": payload.get("word")}
 
 
 @app.get("/stats")
 def get_stats():
-    """Placeholder stats endpoint"""
     return {
         "total_words": 217425,
         "common_words": 22603,
         "levels": ["N5", "N4", "N3", "N2", "N1"]
     }
+
+
+@app.post("/readiness")
+def check_readiness(payload: dict):
+    """
+    Predict if user is ready to level up using XGBoost.
+    Expects:
+    {
+        accuracy_last_10: float,
+        avg_pknown:       float,
+        avg_ease:         float,
+        mastered_count:   int,
+        due_count:        int,
+        streak:           int,
+        current_level:    int
+    }
+    Returns: { ready: bool, score: float, message: str }
+    """
+    try:
+        features = np.array([[
+            float(payload.get("accuracy_last_10", 0)),
+            float(payload.get("avg_pknown", 0)),
+            float(payload.get("avg_ease", 1.3)),
+            int(payload.get("mastered_count", 0)),
+            int(payload.get("due_count", 0)),
+            int(payload.get("streak", 0)),
+            int(payload.get("current_level", 1)),
+        ]])
+
+        model = get_model()
+        score = float(model.predict_proba(features)[0][1])
+        ready = score >= 0.7
+
+        return {
+            "ready":   ready,
+            "score":   round(score, 3),
+            "message": "Ready to level up! 🎉" if ready else "Keep practicing at this level."
+        }
+    except Exception as e:
+        return {"error": str(e), "ready": False, "score": 0}
