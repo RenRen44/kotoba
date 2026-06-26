@@ -1,5 +1,5 @@
 // kotoba-data.jsx
-const API = 'http://127.0.0.1:8000';
+const API = 'https://kotoba-jz96.onrender.com';
 const SESSION_SIZE = 8;
 
 const REVIEW_WORDS = [
