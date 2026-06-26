@@ -25,10 +25,11 @@ async function fetchQuiz(level = 5, count = SESSION_SIZE) {
     const res = await fetch(`${API}/quiz?level=${level}&count=${count}`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
-    return sortByDue(data.questions);  // ← SM-2 sort
+    const filtered = data.questions.filter(q => !isMastered(q.w));
+    return sortByDue(filtered.length >= 4 ? filtered : data.questions);
   } catch (e) {
     console.warn('API unavailable, using fallback words:', e.message);
-    return sortByDue(FALLBACK_BANK);   // ← SM-2 sort
+    return sortByDue(FALLBACK_BANK);
   }
 }
 
