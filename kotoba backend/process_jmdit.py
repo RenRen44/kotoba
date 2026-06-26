@@ -2,19 +2,19 @@ import sqlite3
 import json
 import os
 import urllib.request
+import tarfile
 
 print("Opening JMdict...")
 script_dir = os.path.dirname(os.path.abspath(__file__))
-json_path = os.path.join(script_dir, 'jmdict-all-3.6.2.json')
+json_filename = 'jmdict-all-3.6.2+20260622163854.json'
+json_path = os.path.join(script_dir, json_filename)
 
-# Download if not present
 if not os.path.exists(json_path):
     print("Downloading JMdict JSON...")
-    url = "https://github.com/scriptin/jmdict-simplified/releases/download/3.6.2+20250415130237/jmdict-all-3.6.2.json.tgz"
-    tgz_path = json_path + '.tgz'
+    url = "https://github.com/scriptin/jmdict-simplified/releases/download/3.6.2%2B20260622163854/jmdict-all-3.6.2+20260622163854.json.tgz"
+    tgz_path = os.path.join(script_dir, 'jmdict-all.json.tgz')
     urllib.request.urlretrieve(url, tgz_path)
     print("Extracting...")
-    import tarfile
     with tarfile.open(tgz_path, 'r:gz') as tar:
         tar.extractall(script_dir)
     os.remove(tgz_path)
@@ -25,11 +25,9 @@ with open(json_path, 'r', encoding='utf-8') as f:
 
 print(f"Loaded {len(data['words'])} entries")
 
-# Create database
 conn = sqlite3.connect('jmdict.db')
 cursor = conn.cursor()
 
-# Create the table
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS words (
         id          TEXT PRIMARY KEY,
