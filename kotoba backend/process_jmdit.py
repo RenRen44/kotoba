@@ -16,9 +16,11 @@ if not os.path.exists(json_path):
     urllib.request.urlretrieve(url, tgz_path)
     print("Extracting...")
     with tarfile.open(tgz_path, 'r:gz') as tar:
+        print("Files in archive:", tar.getnames())
         tar.extractall(script_dir)
     os.remove(tgz_path)
     print("Done downloading.")
+    print("Files in dir:", os.listdir(script_dir))
 
 with open(json_path, 'r', encoding='utf-8') as f:
     data = json.load(f)
