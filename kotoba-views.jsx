@@ -363,13 +363,52 @@ function LearnHub({ go }) {
 function Results({ go, res }) {
   const acc = res ? Math.round((res.correct/res.total)*100) : 0;
   const xp  = res ? res.correct*10 + (res.best>=3?25:0) : 0;
+  const [readiness, setReadiness] = uSt(null);
+
+  uEf(() => {
+    // Build stats from localStorage for XGBoost
+    try {
+      const answers  = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
+      const last10   = answers.slice(-10);
+      const acc10    = last10.length > 0 ? last10.filter(a => a.correct).length / last10.length : 0;
+
+      const bkt      = JSON.parse(localStorage.getItem('kotoba_bkt') || '{}');
+      const sm2      = JSON.parse(localStorage.getItem('kotoba_sm2') || '{}');
+
+      const pKnowns  = Object.values(bkt).map(r => r.pKnown);
+      const eases    = Object.values(sm2).map(r => r.ease);
+
+      const avg_pknown      = pKnowns.length > 0 ? pKnowns.reduce((a,b) => a+b, 0) / pKnowns.length : 0;
+      const avg_ease        = eases.length > 0 ? eases.reduce((a,b) => a+b, 0) / eases.length : 1.3;
+      const mastered_count  = getMasteredCount();
+      const due_count       = getDueCount();
+      const streak          = res?.best || 0;
+
+      fetch(`${API}/readiness`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accuracy_last_10: acc10,
+          avg_pknown,
+          avg_ease,
+          mastered_count,
+          due_count,
+          streak,
+          current_level: 1,
+        })
+      })
+      .then(r => r.json())
+      .then(data => setReadiness(data))
+      .catch(() => {});
+    } catch(e) {}
+  }, []);
+
   return (
     <div className="results-page page-enter">
       <div className="result-card">
         <BlobAccent color="rgba(243,178,78,0.26)" size={300} style={{right:-80,top:-110}}/>
         <BlobAccent color="rgba(241,133,90,0.16)" size={220} style={{left:-70,bottom:-80}}/>
         <div style={{position:'relative',zIndex:1}}>
-          {/* kanji instead of emoji */}
           <ResultKanji acc={acc}/>
           <h2>Session complete!</h2>
           <div style={{display:'flex',justifyContent:'center'}}>
@@ -389,6 +428,33 @@ function Results({ go, res }) {
           </div>
         </div>
       </div>
+
+      {/* XGBoost readiness banner */}
+      {readiness && (
+        <div style={{
+          marginTop: 20,
+          padding: '16px 20px',
+          borderRadius: 16,
+          background: readiness.ready
+            ? 'linear-gradient(135deg, rgba(95,174,142,0.15), rgba(95,174,142,0.05))'
+            : 'linear-gradient(135deg, rgba(243,178,78,0.15), rgba(243,178,78,0.05))',
+          border: `1px solid ${readiness.ready ? 'rgba(95,174,142,0.3)' : 'rgba(243,178,78,0.3)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}>
+          <div style={{fontSize: 28}}>{readiness.ready ? '🎉' : '💪'}</div>
+          <div>
+            <div style={{fontWeight: 700, color: 'var(--cream)', fontSize: 14}}>
+              {readiness.ready ? 'Ready to level up!' : 'Keep going!'}
+            </div>
+            <div style={{fontSize: 12, color: 'var(--cream-2)', marginTop: 2}}>
+              {readiness.message} · Score: {Math.round(readiness.score * 100)}%
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{marginTop:28}}>
         <div className="section-head"><h2>Review these next</h2><span className="jp">復習</span></div>
         <div className="review-list">
@@ -409,7 +475,6 @@ function Results({ go, res }) {
     </div>
   );
 }
-
 /* ══════════════════════════════════════════
    PROGRESS
 ══════════════════════════════════════════ */
