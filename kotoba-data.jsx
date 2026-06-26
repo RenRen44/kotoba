@@ -9,7 +9,6 @@ const REVIEW_WORDS = [
   { w:'難しい', r:'muzukashii', m:'difficult'  },
 ];
 
-// Fallback words if API is down
 const FALLBACK_BANK = [
   { w:'食べる', r:'taberu',     opts:['to eat','to drink','to sleep','to buy'],             c:0, lv:'N5' },
   { w:'水',     r:'mizu',       opts:['fire','water','wind','earth'],                        c:1, lv:'N5' },
@@ -21,17 +20,15 @@ const FALLBACK_BANK = [
   { w:'便利',   r:'benri',      opts:['boring','famous','dangerous','convenient'],           c:3, lv:'N5' },
 ];
 
-// Fetches a fresh quiz session from the API
 async function fetchQuiz(level = 5, count = SESSION_SIZE) {
   try {
     const res = await fetch(`${API}/quiz?level=${level}&count=${count}`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
-    // API returns {questions: [{w, r, lv, opts, c}, ...]}
-    return data.questions;
+    return sortByDue(data.questions);  // ← SM-2 sort
   } catch (e) {
     console.warn('API unavailable, using fallback words:', e.message);
-    return FALLBACK_BANK;
+    return sortByDue(FALLBACK_BANK);   // ← SM-2 sort
   }
 }
 
