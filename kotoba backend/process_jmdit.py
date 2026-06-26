@@ -6,7 +6,7 @@ import tarfile
 
 print("Opening JMdict...")
 script_dir = os.path.dirname(os.path.abspath(__file__))
-json_filename = 'jmdict-all-3.6.2+20260622163854.json'
+json_filename = 'jmdict-all-3.6.2.json'
 json_path = os.path.join(script_dir, json_filename)
 
 if not os.path.exists(json_path):
