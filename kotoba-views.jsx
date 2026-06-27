@@ -448,10 +448,10 @@ function Results({ go, res }) {
         }}>
           <div style={{fontSize: 28}}>{readiness.ready ? '🎉' : '💪'}</div>
           <div>
-            <div style={{fontWeight: 700, color: 'var(--cream)', fontSize: 14}}>
+            <div style={{fontWeight: 700, color: 'var(--ink)', fontSize: 14}}>
               {readiness.ready ? 'Ready to level up!' : 'Keep going!'}
             </div>
-            <div style={{fontSize: 12, color: 'var(--cream-2)', marginTop: 2}}>
+            <div style={{fontSize: 12, color: 'var(--ink-2)', marginTop: 2}}>
               {readiness.message} · Score: {Math.round(readiness.score * 100)}%
             </div>
           </div>
