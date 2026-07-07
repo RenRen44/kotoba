@@ -4,7 +4,5 @@ requests
 xgboost
 numpy
 scikit-learn
-python-jose
-cryptography
-passlib
-bcrypt
+python-jose[cryptography]
+passlib[bcrypt]
