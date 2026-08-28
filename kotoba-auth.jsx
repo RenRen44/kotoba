@@ -181,4 +181,4 @@ const inputStyle = {
   transition: 'border-color 0.2s',
 };
 
-Object.assign(window, { Auth });
+Object.assign(window, { Auth });    
