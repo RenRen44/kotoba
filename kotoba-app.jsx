@@ -148,40 +148,12 @@ function BottomNav({ view, go }) {
 
 /* ── Root App ── */
 function App() {
-  const [authed,    setAuthed]    = uS(() => !!localStorage.getItem('kotoba_token'));
   const [onboarded, setOnboarded] = uS(() => !!localStorage.getItem('kotoba_onboarded'));
   const [view,    setView]    = uS(() => localStorage.getItem('kotoba_v') || 'home');
   const [result,  setResult]  = uS(null);
   const [gameKey, setGameKey] = uS(0);
 
   useSoundOnButtons();
-
-  // ... rest of functions stay same ...
-
-  if (!authed) {
-    return (
-      <div className="app">
-        <Cursor/>
-        <div className="paper-tex"/>
-        <Auth onDone={(user) => {
-          setAuthed(true);
-          if (!localStorage.getItem('kotoba_onboarded')) setOnboarded(false);
-        }}/>
-      </div>
-    );
-  }
-
-  if (!onboarded) {
-    return (
-      <div className="app">
-        <Cursor/>
-        <div className="paper-tex"/>
-        <Onboarding onDone={handleOnboardingDone}/>
-      </div>
-    );
-  }
-
-  // ... rest stays same
 
   function go(v) {
     if (v==='play') setGameKey(k=>k+1);
