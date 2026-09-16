@@ -6,3 +6,8 @@ numpy
 scikit-learn
 python-jose[cryptography]
 passlib[bcrypt]
+
+# ── new, for Postgres (Supabase) ──
+sqlalchemy[asyncio]
+asyncpg
+pydantic[email]
