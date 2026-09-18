@@ -25,6 +25,15 @@
 #   • Registration/login payloads are now validated Pydantic models instead
 #     of bare dicts.
 #
+#   • NEW: profile-management routes — PATCH /auth/me, POST /auth/password,
+#     DELETE /auth/me, GET /me/stats — plus GET /auth/me now returns the
+#     full ProfileOut shape (including `onboarded`) instead of a bare
+#     {id, email, name} dict. The frontend's boot sequence, onboarding flow,
+#     and Profile screen all depend on these; they were built into
+#     schemas.py/crud.py earlier but never wired up in main.py, which is why
+#     onboarding appeared to "complete" but never actually persisted, and
+#     the Profile screen's edit/password/delete/stats features all 405'd.
+#
 # Everything else — get_jlpt_words, enrich_with_jmdict, get_distractors, the
 # JMdict SQLite lookups — is UNCHANGED from your original file.
 
@@ -46,7 +55,10 @@ import os
 from auth import create_token, get_current_user, hash_password, verify_password
 from db import get_db, init_models
 from models import User
-from schemas import AnswerIn, AnswerOut, AuthOut, LoginIn, ReadinessOut, RegisterIn
+from schemas import (
+    AnswerIn, AnswerOut, AuthOut, LoginIn, ReadinessOut, RegisterIn,
+    ProfileOut, ProfileUpdateIn, PasswordChangeIn, StatsOut,
+)
 import crud
 
 app = FastAPI()
@@ -144,6 +156,21 @@ def get_distractors(correct_meaning: str, pos_tags: list, count: int, db):
     return distractors
 
 
+def _user_to_profile_dict(user: User) -> dict:
+    """Shared shape used by GET /auth/me and PATCH /auth/me responses."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "why": user.why,
+        "level": user.level,
+        "daily_goal": user.daily_goal,
+        "jlpt_level": user.jlpt_level,
+        "onboarded": bool(user.onboarded),
+        "created": user.created,
+    }
+
+
 # ════════════════════════════════
 #  AUTH ROUTES
 # ════════════════════════════════
@@ -185,13 +212,97 @@ async def login(payload: LoginIn, db=Depends(get_db)):
     return {"token": token, "user": {"id": user.id, "email": user.email, "name": user.name}}
 
 
-@app.get("/auth/me")
+@app.get("/auth/me", response_model=ProfileOut)
 async def me(user_id: str = Depends(get_current_user), db=Depends(get_db)):
+    """
+    Now returns the full ProfileOut shape (including `onboarded`) instead of
+    a bare {id, email, name} dict. The frontend's boot sequence reads
+    `onboarded` from this response to decide whether to route a returning
+    user straight into the app or into the onboarding flow.
+    """
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found.")
-    return {"id": user.id, "email": user.email, "name": user.name}
+    return _user_to_profile_dict(user)
+
+
+@app.patch("/auth/me", response_model=ProfileOut)
+async def update_me(payload: ProfileUpdateIn, user_id: str = Depends(get_current_user), db=Depends(get_db)):
+    """
+    Partial profile update. Used by:
+      - kotoba-onboarding.jsx's final step: {why, level, daily_goal,
+        jlpt_level, onboarded: true}
+      - kotoba-views.jsx's Profile screen: name edits, goal/level picker
+        changes, one field at a time.
+    Only fields the client actually sent are touched — everything else on
+    the row is left alone.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found.")
+
+    updates = payload.model_dump(exclude_unset=True)
+
+    if "name" in updates:
+        user.name = updates["name"].strip()
+    if "why" in updates:
+        user.why = updates["why"]
+    if "level" in updates:
+        user.level = updates["level"]
+    if "daily_goal" in updates:
+        user.daily_goal = updates["daily_goal"]
+    if "jlpt_level" in updates:
+        user.jlpt_level = updates["jlpt_level"]
+    if "onboarded" in updates:
+        user.onboarded = 1 if updates["onboarded"] else 0
+
+    await db.commit()
+    await db.refresh(user)
+    return _user_to_profile_dict(user)
+
+
+@app.post("/auth/password")
+async def change_password(payload: PasswordChangeIn, user_id: str = Depends(get_current_user), db=Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found.")
+
+    if not verify_password(payload.current_password, user.password):
+        raise HTTPException(400, "Current password is incorrect.")
+
+    user.password = hash_password(payload.new_password)
+    await db.commit()
+    return {"ok": True}
+
+
+@app.delete("/auth/me")
+async def delete_me(user_id: str = Depends(get_current_user), db=Depends(get_db)):
+    """
+    Deletes the user row. user_sm2 / user_bkt / review_log all have
+    ForeignKey(..., ondelete="CASCADE") back to users.id (see models.py),
+    so Postgres cleans those up automatically — no need to delete them here.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found.")
+
+    await db.delete(user)
+    await db.commit()
+    return {"ok": True}
+
+
+@app.get("/me/stats", response_model=StatsOut)
+async def my_stats(user_id: str = Depends(get_current_user), db=Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found.")
+
+    return await crud.get_user_stats(db, user_id, daily_goal=user.daily_goal)
 
 
 # ════════════════════════════════
