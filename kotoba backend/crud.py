@@ -144,6 +144,71 @@ async def get_mastered_words(db: AsyncSession, user_id: str) -> list[str]:
     return [row[0] for row in result.all()]
 
 
+async def get_user_stats(db: AsyncSession, user_id: str, daily_goal: int = 10) -> dict:
+    """
+    Everything the Profile and Progress screens need, computed from review_log.
+
+    This replaces the hardcoded demo values that were baked into the frontend
+    ("12 day streak", "248 words mastered", "Rank 142"). All of it is derived
+    from real rows now.
+
+    Note on timezones: day boundaries are computed in UTC. For a learner in
+    IST that means the "day" rolls over at 5:30am local. If that bothers you
+    later, store a tz offset on the user and shift `ts` before bucketing —
+    the fix belongs here, in one place.
+    """
+    result = await db.execute(
+        select(ReviewLog.correct, ReviewLog.word, ReviewLog.timestamp)
+        .where(ReviewLog.user_id == user_id)
+        .order_by(ReviewLog.timestamp.asc())
+    )
+    rows = result.all()
+
+    total = len(rows)
+    correct = sum(1 for r in rows if r[0])
+    words_seen = len({r[1] for r in rows})
+
+    # Longest run of consecutive correct answers, all time.
+    best_combo = cur = 0
+    for r in rows:
+        cur = cur + 1 if r[0] else 0
+        best_combo = max(best_combo, cur)
+
+    DAY_MS = 86_400_000
+    day_numbers = sorted({int(r[2]) // DAY_MS for r in rows})
+    study_days = len(day_numbers)
+
+    today = int(time.time() * 1000) // DAY_MS
+    answered_today = sum(1 for r in rows if int(r[2]) // DAY_MS == today)
+
+    # Day streak: walk backwards from today (or yesterday, so the streak
+    # isn't shown as broken before you've studied yet on the current day).
+    day_streak = 0
+    if day_numbers:
+        day_set = set(day_numbers)
+        cursor = today if today in day_set else today - 1
+        while cursor in day_set:
+            day_streak += 1
+            cursor -= 1
+
+    mastered = await get_mastered_words(db, user_id)
+    due = await get_due_words(db, user_id)
+
+    return {
+        "total_answers": total,
+        "correct_answers": correct,
+        "accuracy": round((correct / total) * 100) if total else 0,
+        "words_seen": words_seen,
+        "mastered_count": len(mastered),
+        "due_count": len(due),
+        "study_days": study_days,
+        "day_streak": day_streak,
+        "best_combo": best_combo,
+        "daily_goal": daily_goal,
+        "answered_today": answered_today,
+    }
+
+
 async def get_readiness_features(db: AsyncSession, user_id: str, current_level: int) -> dict:
     """
     Computes the exact feature set /readiness needs, server-side, from real
