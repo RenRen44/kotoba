@@ -175,7 +175,7 @@ function Landing({ go }) {
             </button>
           </div>
           <div className="land-note" style={{marginTop:18}}>
-            {I.check(13)} Free · No account needed · N5 vocab live now
+            {I.check(13)} Free · Progress syncs across devices · N5 vocab live now
           </div>
         </div>
 
@@ -237,7 +237,13 @@ function Landing({ go }) {
 /* ══════════════════════════════════════════
    LEARN HUB
 ══════════════════════════════════════════ */
-function LearnHub({ go }) {
+function LearnHub({ go, user, stats }) {
+  // Real numbers where we have them, instead of the hardcoded "34%".
+  const n5Progress = stats && stats.words_seen
+    ? Math.min(100, Math.round((stats.mastered_count / Math.max(stats.words_seen, 1)) * 100))
+    : 0;
+  const dueNow = stats ? stats.due_count : 0;
+
   const categories = [
     {
       id:'vocab',
@@ -245,7 +251,8 @@ function LearnHub({ go }) {
       iconBg:'rgba(241,133,90,0.13)', iconColor:'var(--peach)',
       title:'Vocabulary', jp:'語彙', available:true,
       levels:[
-        { tag:'N5', kana:'語', title:'N5 Vocab',  meta:'16 words',   words:16,   progress:34, available:true  },
+        { tag:'N5', kana:'語', title:'N5 Vocab',  meta: dueNow > 0 ? `${dueNow} due now` : 'Ready when you are',
+          words: stats ? stats.words_seen : 0, progress: n5Progress, available:true  },
         { tag:'N4', kana:'語', title:'N4 Vocab',  meta:'~300 words', words:300,  progress:0,  available:false },
         { tag:'N3', kana:'語', title:'N3 Vocab',  meta:'~650 words', words:650,  progress:0,  available:false },
         { tag:'N2', kana:'語', title:'N2 Vocab',  meta:'~1k words',  words:1000, progress:0,  available:false },
@@ -368,42 +375,17 @@ function Results({ go, res }) {
   const xp  = res ? res.correct*10 + (res.best>=3?25:0) : 0;
   const [readiness, setReadiness] = uSt(null);
 
+  // The readiness model now reads its own features straight from this
+  // user's rows in Postgres. The old version computed them in the browser
+  // from localStorage and POSTed them — which meant anyone could send
+  // accuracy_last_10: 1.0 and be told they were ready, and it only ever saw
+  // whatever this one device had cached.
   uEf(() => {
-    // Build stats from localStorage for XGBoost
-    try {
-      const answers  = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
-      const last10   = answers.slice(-10);
-      const acc10    = last10.length > 0 ? last10.filter(a => a.correct).length / last10.length : 0;
-
-      const bkt      = JSON.parse(localStorage.getItem('kotoba_bkt') || '{}');
-      const sm2      = JSON.parse(localStorage.getItem('kotoba_sm2') || '{}');
-
-      const pKnowns  = Object.values(bkt).map(r => r.pKnown);
-      const eases    = Object.values(sm2).map(r => r.ease);
-
-      const avg_pknown      = pKnowns.length > 0 ? pKnowns.reduce((a,b) => a+b, 0) / pKnowns.length : 0;
-      const avg_ease        = eases.length > 0 ? eases.reduce((a,b) => a+b, 0) / eases.length : 1.3;
-      const mastered_count  = getMasteredCount();
-      const due_count       = getDueCount();
-      const streak          = res?.best || 0;
-
-      fetch(`${API}/readiness`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accuracy_last_10: acc10,
-          avg_pknown,
-          avg_ease,
-          mastered_count,
-          due_count,
-          streak,
-          current_level: 1,
-        })
-      })
-      .then(r => r.json())
-      .then(data => setReadiness(data))
-      .catch(() => {});
-    } catch(e) {}
+    let cancelled = false;
+    apiJson('/readiness?current_level=1', { method: 'POST' })
+      .then(data => { if (!cancelled) setReadiness(data); })
+      .catch(() => {});   // non-fatal: the banner just doesn't render
+    return () => { cancelled = true; };
   }, []);
 
   return (
@@ -459,9 +441,24 @@ function Results({ go, res }) {
       )}
 
       <div style={{marginTop:28}}>
-        <div className="section-head"><h2>Review these next</h2><span className="jp">復習</span></div>
+        <div className="section-head">
+          <h2>{res && res.wrongWords && res.wrongWords.length ? 'Review these next' : 'Nothing missed'}</h2>
+          <span className="jp">復習</span>
+        </div>
+        {/* Shows the words actually missed this session. This used to render
+            the same four hardcoded REVIEW_WORDS every time, because the
+            wrongWords filter in Game returned false for everything. */}
+        {res && res.wrongWords && res.wrongWords.length === 0 ? (
+          <div className="card" style={{padding:'26px 24px',textAlign:'center'}}>
+            <div style={{fontFamily:'var(--jp)',fontSize:34,color:'var(--sage)',marginBottom:8}}>完璧</div>
+            <div style={{fontWeight:700,marginBottom:4}}>Perfect session</div>
+            <div style={{color:'var(--ink-3)',fontSize:13.5}}>
+              Every word correct. They'll come back when they're due.
+            </div>
+          </div>
+        ) : (
         <div className="review-list">
-          {REVIEW_WORDS.map((r,i)=>(
+          {((res && res.wrongWords && res.wrongWords.length) ? res.wrongWords : REVIEW_WORDS).map((r,i)=>(
             <div className="review-row" key={i}>
               <span className="rw">{r.w}</span>
               <span className="rr">{r.r}</span>
@@ -470,6 +467,7 @@ function Results({ go, res }) {
             </div>
           ))}
         </div>
+        )}
       </div>
       <div style={{display:'flex',gap:12,marginTop:28}}>
         <button className="btn btn-soft" style={{flex:1}} onClick={()=>go('home')}>Back home</button>
@@ -481,63 +479,27 @@ function Results({ go, res }) {
 /* ══════════════════════════════════════════
    PROGRESS
 ══════════════════════════════════════════ */
-function useRealStats() {
-  return uM(() => {
-    try {
-      const answers = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
-      if (answers.length === 0) return null;
+/*
+  Progress now renders from GET /me/stats, passed down from App.
 
-      const total     = answers.length;
-      const correct   = answers.filter(a => a.correct).length;
-      const accuracy  = Math.round((correct / total) * 100);
-
-      // unique words seen
-      const uniqueWords = new Set(answers.map(a => a.word)).size;
-
-      // session count — group by day
-      const days = new Set(answers.map(a =>
-        new Date(a.timestamp).toDateString()
-      )).size;
-
-      // best combo from localStorage
-      const bestCombo = parseInt(localStorage.getItem('kotoba_best_combo') || '0');
-
-      // N5 accuracy
-      const n5 = answers.filter(a => a.level === 'N5');
-      const n5acc = n5.length > 0
-        ? Math.round((n5.filter(a => a.correct).length / n5.length) * 100)
-        : 0;
-
-      // heatmap — last 53*7 days
-      const now = Date.now();
-      const DAY = 86400000;
-      const heatMap = Array.from({ length: 53 * 7 }, (_, i) => {
-        const dayStart = now - (53 * 7 - i) * DAY;
-        const dayEnd   = dayStart + DAY;
-        return answers.filter(a => a.timestamp >= dayStart && a.timestamp < dayEnd).length;
-      });
-      const maxDay = Math.max(...heatMap, 1);
-
-      return { total, correct, accuracy, uniqueWords, days, bestCombo, n5acc, heatMap, maxDay };
-    } catch(e) {
-      return null;
-    }
-  }, []);
-}
-
-function Progress() {
-  const stats = useRealStats();
+  What this replaces: the old useRealStats() read 'kotoba_answers' out of
+  localStorage. That meant progress was per-browser (clearing site data
+  wiped your entire history, and your phone showed an empty app), and the
+  53×7 heatmap was recomputed by scanning every answer 371 times on mount.
+  The server keeps the review_log, so the numbers follow the account.
+*/
+function Progress({ stats }) {
   const heatColors = ['var(--sand)','rgba(243,178,78,0.28)','rgba(243,178,78,0.52)','var(--honey)','var(--peach)'];
 
   const jlpt = [
-    { lv:'N5', pct: stats ? stats.n5acc : 0,  cls:'sage', cur: true },
+    { lv:'N5', pct: stats ? stats.accuracy : 0,  cls:'sage', cur: true },
     { lv:'N4', pct: 0, cls:'' },
     { lv:'N3', pct: 0, cls:'' },
     { lv:'N2', pct: 0, cls:'' },
     { lv:'N1', pct: 0, cls:'' },
   ];
 
-  if (!stats) {
+  if (!stats || stats.total_answers === 0) {
     return (
       <div className="page page-enter">
         <div style={{marginBottom:28}}>
@@ -559,14 +521,21 @@ function Progress() {
         <p style={{fontFamily:'var(--jp)',color:'var(--peach)',fontWeight:700,fontSize:14,margin:'0 0 6px',letterSpacing:'0.05em'}}>学習記録</p>
         <h1 style={{fontFamily:'var(--display)',fontWeight:800,fontSize:32,letterSpacing:'-0.02em',margin:0}}>Your progress</h1>
         <p style={{color:'var(--ink-3)',fontSize:14,margin:'8px 0 0'}}>
-          {stats.uniqueWords} words seen across {stats.days} study day{stats.days!==1?'s':''}.
+          {stats.words_seen} words seen across {stats.study_days} study day{stats.study_days!==1?'s':''}
+          {stats.due_count > 0 && <> · <b style={{color:'var(--peach)'}}>{stats.due_count} due now</b></>}
         </p>
       </div>
       <div className="stat-grid">
-        <StatCard icon={I.trophy(18)} color="var(--honey)" value={<Count to={stats.days}/>}              label="Study days"  jp="日"/>
-        <StatCard icon={I.book(18)}   color="var(--peach)" value={<Count to={stats.uniqueWords}/>}       label="Words seen"  jp="単語"/>
-        <StatCard icon={I.target(18)} color="var(--sage)"  value={<Count to={stats.accuracy} suffix="%"/>} label="Accuracy" jp="正答率"/>
-        <StatCard icon={I.bolt(18)}   color="var(--lav)"   value={<Count to={stats.total}/>}             label="Answers"     jp="回答"/>
+        <StatCard icon={I.trophy(18)} color="var(--honey)" value={<Count to={stats.study_days}/>}          label="Study days" jp="日"/>
+        <StatCard icon={I.book(18)}   color="var(--peach)" value={<Count to={stats.words_seen}/>}          label="Words seen" jp="単語"/>
+        <StatCard icon={I.target(18)} color="var(--sage)"  value={<Count to={stats.accuracy} suffix="%"/>} label="Accuracy"   jp="正答率"/>
+        <StatCard icon={I.bolt(18)}   color="var(--lav)"   value={<Count to={stats.total_answers}/>}       label="Answers"    jp="回答"/>
+      </div>
+      <div className="stat-grid" style={{marginTop:12}}>
+        <StatCard icon={I.star(18)}  color="var(--sage)"  value={<Count to={stats.mastered_count}/>} label="Mastered"   jp="習得"/>
+        <StatCard icon={I.clock(18)} color="var(--peach)" value={<Count to={stats.due_count}/>}      label="Due now"    jp="復習"/>
+        <StatCard icon={I.flame(18)} color="var(--honey)" value={<Count to={stats.day_streak}/>}     label="Day streak" jp="連続"/>
+        <StatCard icon={I.spark(18)} color="var(--lav)"   value={<Count to={stats.best_combo}/>}     label="Best combo" jp="最高"/>
       </div>
       <div className="section-head"><h2>JLPT readiness</h2><span className="jp">試験準備</span></div>
       <div className="card jlpt-card">
@@ -579,18 +548,33 @@ function Progress() {
         ))}
       </div>
       <div className="section-head">
-        <h2>Activity</h2><span className="jp">活動</span>
-        <span className="more">{stats.total} answers</span>
+        <h2>Today</h2><span className="jp">今日</span>
+        <span className="more">{stats.total_answers} answers all time</span>
       </div>
-      <div className="card" style={{padding:'24px 26px',overflowX:'auto'}}>
-        <div className="heat">
-          {stats.heatMap.map((v,i)=>{
-            const ratio = v / stats.maxDay;
-            const lvl = v===0?0:ratio>0.75?4:ratio>0.5?3:ratio>0.25?2:1;
-            return <i key={i} style={{background:heatColors[lvl]}}/>;
-          })}
+      <div className="card" style={{padding:'24px 26px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
+          <Ring value={Math.min(100, Math.round((stats.answered_today / Math.max(1, stats.daily_goal)) * 100))}
+                size={104} stroke={11} color="var(--peach)" track="rgba(32,30,51,0.07)">
+            <div>
+              <div style={{fontFamily:'var(--display)',fontWeight:800,fontSize:24,lineHeight:1}}>
+                {stats.answered_today}
+              </div>
+              <div style={{fontSize:11,color:'var(--ink-3)',marginTop:2}}>of {stats.daily_goal}</div>
+            </div>
+          </Ring>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:4}}>
+              {stats.answered_today >= stats.daily_goal
+                ? 'Daily goal complete'
+                : `${stats.daily_goal - stats.answered_today} to go today`}
+            </div>
+            <div style={{color:'var(--ink-3)',fontSize:13.5,lineHeight:1.5}}>
+              {stats.answered_today >= stats.daily_goal
+                ? 'Nice work — anything beyond this is a bonus.'
+                : 'Short, regular sessions beat long rare ones. Change your goal in Profile.'}
+            </div>
+          </div>
         </div>
-        <div className="heat-legend">less&nbsp;{heatColors.map((c,i)=><i key={i} style={{background:c}}/>)}&nbsp;more</div>
       </div>
     </div>
   );
@@ -599,37 +583,309 @@ function Progress() {
 /* ══════════════════════════════════════════
    PROFILE
 ══════════════════════════════════════════ */
-function Profile({ go }) {
+/*
+  Profile — real account data, editable.
+
+  Replaces the previous hardcoded panel ("Ren Takahashi", 12-day streak,
+  "N4 · 248 words mastered", three unlocked achievements, and five settings
+  rows that did nothing). Everything here now comes from /auth/me and
+  /me/stats, and the edits actually persist.
+
+  Props come from App: user (ProfileOut), stats (StatsOut), onUser to push
+  an updated profile back up, onLogout, onRefreshStats.
+*/
+
+const WHY_LABELS = {
+  travel:'Travel to Japan', anime:'Anime & manga', work:'Work or business',
+  moving:'Moving to Japan', culture:'Japanese culture', curious:'Just curious',
+};
+const LEVEL_LABELS = {
+  zero:'Total beginner', kana:'Knows some kana',
+  studied:'Studied before', conversational:'Conversational',
+};
+const GOAL_CHOICES = [
+  { val:5,  label:'Casual',  sub:'~3 min'  },
+  { val:10, label:'Regular', sub:'~6 min'  },
+  { val:20, label:'Serious', sub:'~12 min' },
+  { val:30, label:'Intense', sub:'~20 min' },
+];
+
+function joinedLabel(created) {
+  if (!created) return null;
+  try {
+    return new Date(created * 1000).toLocaleDateString(undefined, { month:'short', year:'numeric' });
+  } catch (e) { return null; }
+}
+
+/* ── Inline editable name ── */
+function NameEditor({ user, onUser }) {
+  const [editing, setEditing] = uSt(false);
+  const [value,   setValue]   = uSt(user.name || '');
+  const [busy,    setBusy]    = uSt(false);
+  const [err,     setErr]     = uSt('');
+
+  uEf(() => { setValue(user.name || ''); }, [user.name]);
+
+  async function save() {
+    const name = value.trim();
+    if (!name)            { setErr('Name can\'t be empty.'); return; }
+    if (name === user.name) { setEditing(false); setErr(''); return; }
+    setBusy(true); setErr('');
+    try {
+      const updated = await apiUpdateProfile({ name });
+      onUser(updated);
+      setEditing(false);
+    } catch (e) {
+      setErr(e.message || 'Could not save.');
+    } finally { setBusy(false); }
+  }
+
+  if (!editing) {
+    return (
+      <h1 style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        {user.name}
+        <button className="pf-inline-edit" onClick={()=>setEditing(true)}>Edit</button>
+      </h1>
+    );
+  }
+
+  return (
+    <div className="pf-name-edit">
+      <input
+        value={value} onChange={e=>setValue(e.target.value)} disabled={busy}
+        maxLength={80} autoFocus
+        onKeyDown={e => { if (e.key==='Enter') save(); if (e.key==='Escape') { setEditing(false); setErr(''); } }}
+      />
+      <button className="btn btn-peach pf-mini-btn" onClick={save} disabled={busy}>
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+      <button className="btn btn-soft pf-mini-btn" onClick={()=>{setEditing(false);setValue(user.name||'');setErr('');}} disabled={busy}>
+        Cancel
+      </button>
+      {err && <div className="pf-err">{err}</div>}
+    </div>
+  );
+}
+
+/* ── Change password ── */
+function PasswordSection() {
+  const [open,    setOpen]    = uSt(false);
+  const [cur,     setCur]     = uSt('');
+  const [next,    setNext]    = uSt('');
+  const [busy,    setBusy]    = uSt(false);
+  const [msg,     setMsg]     = uSt('');
+  const [err,     setErr]     = uSt('');
+
+  async function submit(e) {
+    e.preventDefault();
+    setErr(''); setMsg('');
+    if (next.length < 6) { setErr('New password must be at least 6 characters.'); return; }
+    setBusy(true);
+    try {
+      await apiChangePassword(cur, next);
+      setMsg('Password updated.');
+      setCur(''); setNext('');
+      setTimeout(()=>{ setOpen(false); setMsg(''); }, 1400);
+    } catch (e) {
+      setErr(e.message || 'Could not change password.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="pf-block">
+      <button className="settings-row pf-row-btn" onClick={()=>setOpen(o=>!o)}>
+        <span className="s-label">Change password</span>
+        <span style={{color:'var(--ink-3)',display:'flex',transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>
+          {I.chev(16)}
+        </span>
+      </button>
+      {open && (
+        <form className="pf-form" onSubmit={submit}>
+          <div className="pf-field">
+            <label>Current password</label>
+            <input type="password" value={cur} onChange={e=>setCur(e.target.value)}
+                   autoComplete="current-password" disabled={busy}/>
+          </div>
+          <div className="pf-field">
+            <label>New password</label>
+            <input type="password" value={next} onChange={e=>setNext(e.target.value)}
+                   autoComplete="new-password" placeholder="At least 6 characters" disabled={busy}/>
+          </div>
+          {err && <div className="pf-err">{I.x(14)} {err}</div>}
+          {msg && <div className="pf-ok">{I.check(14)} {msg}</div>}
+          <button type="submit" className="btn btn-peach" disabled={busy} style={{alignSelf:'flex-start'}}>
+            {busy ? 'Updating…' : 'Update password'}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/* ── Danger zone: delete account ── */
+function DeleteSection({ onLogout }) {
+  const [open,    setOpen]    = uSt(false);
+  const [confirm, setConfirm] = uSt('');
+  const [busy,    setBusy]    = uSt(false);
+  const [err,     setErr]     = uSt('');
+
+  async function remove() {
+    setBusy(true); setErr('');
+    try {
+      await apiDeleteAccount();
+      logout();
+      onLogout();
+    } catch (e) {
+      setErr(e.message || 'Could not delete account.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="pf-block">
+      <button className="settings-row pf-row-btn pf-danger-row" onClick={()=>setOpen(o=>!o)}>
+        <span className="s-label">Delete account</span>
+        <span style={{color:'var(--terra)',display:'flex'}}>{I.chev(16)}</span>
+      </button>
+      {open && (
+        <div className="pf-form">
+          <p className="pf-danger-note">
+            This permanently deletes your account, your review history and your
+            entire schedule. It cannot be undone. Type <b>DELETE</b> to confirm.
+          </p>
+          <div className="pf-field">
+            <input value={confirm} onChange={e=>setConfirm(e.target.value)}
+                   placeholder="DELETE" disabled={busy}/>
+          </div>
+          {err && <div className="pf-err">{I.x(14)} {err}</div>}
+          <button className="btn pf-danger-btn" disabled={busy || confirm !== 'DELETE'}
+                  onClick={remove} style={{alignSelf:'flex-start'}}>
+            {busy ? 'Deleting…' : 'Permanently delete my account'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Profile({ go, user, stats, onUser, onLogout, onRefreshStats }) {
+  const [goalBusy, setGoalBusy] = uSt(false);
+
+  if (!user) {
+    return (
+      <div className="page page-enter">
+        <div className="card" style={{padding:40,textAlign:'center'}}>
+          <div style={{fontFamily:'var(--jp)',fontSize:44,color:'var(--ink-3)',marginBottom:12}}>読</div>
+          <div style={{color:'var(--ink-3)'}}>Loading your profile…</div>
+        </div>
+      </div>
+    );
+  }
+
+  const s = stats || {
+    total_answers:0, accuracy:0, words_seen:0, mastered_count:0, due_count:0,
+    study_days:0, day_streak:0, best_combo:0, daily_goal:user.daily_goal||10, answered_today:0,
+  };
+
+  // Achievements are now derived from real numbers instead of being three
+  // permanently-unlocked decorations.
   const achievements = [
-    { iconEl: I.crane(32),  title:'Week warrior',  desc:'7-day streak',      unlocked:true,  color:'var(--honey)'},
-    { iconEl: I.lotus(32),  title:'Century',       desc:'100 words learned', unlocked:true,  color:'var(--peach)'},
-    { iconEl: I.fuji(32),   title:'Perfectionist', desc:'100% session',      unlocked:true,  color:'var(--sage)' },
-    { iconEl: I.koi(32),    title:'Combo master',  desc:'20× combo',         unlocked:false, color:'var(--lav)'  },
+    { iconEl:I.crane(32), title:'Week warrior',  desc:'7-day streak',       unlocked:s.day_streak    >= 7,   color:'var(--honey)' },
+    { iconEl:I.lotus(32), title:'Century',       desc:'100 words seen',     unlocked:s.words_seen    >= 100, color:'var(--peach)' },
+    { iconEl:I.fuji(32),  title:'Sharpshooter',  desc:'90% accuracy',       unlocked:s.accuracy      >= 90 && s.total_answers >= 20, color:'var(--sage)' },
+    { iconEl:I.koi(32),   title:'Combo master',  desc:'20× combo',          unlocked:s.best_combo    >= 20,  color:'var(--lav)'   },
   ];
-  const settings = ['Daily goal','Notifications','Audio & pronunciation','App language','Account'];
+
+  async function setGoal(val) {
+    if (val === user.daily_goal || goalBusy) return;
+    setGoalBusy(true);
+    try {
+      const updated = await apiUpdateProfile({ daily_goal: val });
+      onUser(updated);
+      if (onRefreshStats) onRefreshStats();
+    } catch (e) {
+      console.warn('Could not update daily goal:', e.message);
+    } finally { setGoalBusy(false); }
+  }
+
+  async function setJlpt(val) {
+    if (val === user.jlpt_level) return;
+    try {
+      const updated = await apiUpdateProfile({ jlpt_level: val });
+      onUser(updated);
+    } catch (e) {
+      console.warn('Could not update level:', e.message);
+    }
+  }
+
+  const joined = joinedLabel(user.created);
+
   return (
     <div className="page page-enter">
       <div className="profile-hero">
         <BlobAccent color="rgba(243,178,78,0.28)" size={280} style={{right:-90,top:-100}}/>
-        {/* decorative bonsai */}
         <div style={{position:'absolute',right:110,bottom:0,opacity:0.08,color:'var(--cream)',pointerEvents:'none'}}>
           {I.bonsai(90)}
         </div>
-        <div className="avatar" style={{width:76,height:76,flex:'0 0 76px',fontSize:30,position:'relative'}}>R</div>
+        <div className="avatar" style={{width:76,height:76,flex:'0 0 76px',fontSize:30,position:'relative'}}>
+          {(user.name || '?').trim().charAt(0).toUpperCase() || '?'}
+        </div>
         <div style={{position:'relative',flex:1,minWidth:0}}>
-          <h1>Ren Takahashi</h1>
-          <p className="sub">Level N4 · 248 words mastered · joined Mar 2025</p>
+          <NameEditor user={user} onUser={onUser}/>
+          <p className="sub">
+            {user.email}
+            {joined && <> · joined {joined}</>}
+          </p>
           <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
             <span className="chip" style={{background:'rgba(255,255,255,0.09)',border:'none',color:'var(--cream)'}}>
-              {I.flame(14)}<b style={{color:'var(--honey)',fontFamily:'var(--display)'}}>12</b> day streak
+              {I.flame(14)}<b style={{color:'var(--honey)',fontFamily:'var(--display)'}}>{s.day_streak}</b> day streak
             </span>
             <span className="chip" style={{background:'rgba(255,255,255,0.09)',border:'none',color:'var(--cream)'}}>
-              {I.trophy(14)}<b style={{fontFamily:'var(--display)'}}>Rank 142</b>
+              {I.star(14)}<b style={{fontFamily:'var(--display)'}}>{s.mastered_count}</b> mastered
+            </span>
+            <span className="chip" style={{background:'rgba(255,255,255,0.09)',border:'none',color:'var(--cream)'}}>
+              <b style={{fontFamily:'var(--display)'}}>N{user.jlpt_level || 5}</b>
             </span>
           </div>
         </div>
         <div style={{position:'relative',flexShrink:0}}><Mascot size={90} mood="wink"/></div>
       </div>
+
+      {/* ── Daily goal ── */}
+      <div className="section-head"><h2>Daily goal</h2><span className="jp">目標</span>
+        <span className="more">{s.answered_today} answered today</span>
+      </div>
+      <div className="pf-choice-grid">
+        {GOAL_CHOICES.map(g => (
+          <button key={g.val}
+                  className={'pf-choice' + (user.daily_goal === g.val ? ' on' : '')}
+                  disabled={goalBusy}
+                  onClick={()=>setGoal(g.val)}>
+            <div className="pf-choice-n">{g.val}</div>
+            <div className="pf-choice-l">{g.label}</div>
+            <div className="pf-choice-s">{g.sub}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Study level ── */}
+      <div className="section-head"><h2>Study level</h2><span className="jp">級</span></div>
+      <div className="pf-choice-grid pf-level-grid">
+        {[5,4,3,2,1].map(n => (
+          <button key={n}
+                  className={'pf-choice' + (user.jlpt_level === n ? ' on' : '')}
+                  onClick={()=>setJlpt(n)}>
+            <div className="pf-choice-n">N{n}</div>
+            <div className="pf-choice-s">{n===5?'Beginner':n===1?'Advanced':''}</div>
+          </button>
+        ))}
+      </div>
+      <p className="pf-hint">
+        Quizzes pull from this level. Only N5 has content right now — the rest will
+        fall back to N5 until their word banks land.
+      </p>
+
+      {/* ── Achievements ── */}
       <div className="section-head"><h2>Achievements</h2><span className="jp">実績</span></div>
       <div className="ach-grid">
         {achievements.map((a,i)=>(
@@ -645,14 +901,37 @@ function Profile({ go }) {
           </div>
         ))}
       </div>
-      <div className="section-head"><h2>Settings</h2><span className="jp">設定</span></div>
-      <div className="card settings-list">
-        {settings.map((s,i)=>(
-          <div className="settings-row" key={i}>
-            <span className="s-label">{s}</span>
-            <span style={{color:'var(--ink-3)',display:'flex'}}>{I.chev(16)}</span>
+
+      {/* ── Your answers (from onboarding) ── */}
+      {(user.why || user.level) && (
+        <React.Fragment>
+          <div className="section-head"><h2>About you</h2><span className="jp">あなた</span></div>
+          <div className="card settings-list">
+            {user.why && (
+              <div className="settings-row">
+                <span className="s-label">Learning because</span>
+                <span style={{color:'var(--ink-3)',fontSize:13.5}}>{WHY_LABELS[user.why] || user.why}</span>
+              </div>
+            )}
+            {user.level && (
+              <div className="settings-row">
+                <span className="s-label">Starting point</span>
+                <span style={{color:'var(--ink-3)',fontSize:13.5}}>{LEVEL_LABELS[user.level] || user.level}</span>
+              </div>
+            )}
           </div>
-        ))}
+        </React.Fragment>
+      )}
+
+      {/* ── Account ── */}
+      <div className="section-head"><h2>Account</h2><span className="jp">設定</span></div>
+      <div className="card settings-list">
+        <PasswordSection/>
+        <button className="settings-row pf-row-btn" onClick={onLogout}>
+          <span className="s-label">Sign out</span>
+          <span style={{color:'var(--ink-3)',display:'flex'}}>{I.chev(16)}</span>
+        </button>
+        <DeleteSection onLogout={onLogout}/>
       </div>
     </div>
   );

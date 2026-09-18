@@ -11,22 +11,43 @@
 </head>
 <body>
 <div id="root"></div>
+
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<!--
+  LOAD ORDER IS THE DEPENDENCY GRAPH.
+  These are classic scripts sharing one global scope, so:
+    * a file must come AFTER anything it references at top level
+    * no file may be listed TWICE (a second run re-executes `const API`,
+      `const CLICK_SFX` etc. and throws "has already been declared",
+      which kills every script after it)
+
+  sound  → CLICK_SFX, useSound
+  sm2    → local SM-2 helpers (display only; server is authoritative)
+  bkt    → local BKT helpers (display only)
+  data   → API, SESSION_SIZE, FALLBACK_BANK, fetchQuiz     (needs sm2/bkt)
+  icons  → I            (app + onboarding read I at top level)
+  mascot → Mascot, BlobAccent
+  ui     → Ring, Count, Bar, tint, StatCard
+  auth   → tokens, authFetch, AuthScreen                   (needs API, I, Mascot)
+  game   → Game, saveAnswer                                (needs auth, data)
+  views  → Landing, LearnHub, Results, Progress, Profile   (needs ui, auth)
+  onboard→ Onboarding                                      (needs I, Mascot)
+  app    → App + render                                    (needs everything)
+-->
 <script type="text/babel" src="kotoba-sound.jsx"></script>
-<script type="text/babel" src="kotoba-sm2.jsx"></script>  ← ADD THIS
-<script type="text/babel" src="kotoba-bkt.jsx"></script>  ← ADD THIS
+<script type="text/babel" src="kotoba-sm2.jsx"></script>
+<script type="text/babel" src="kotoba-bkt.jsx"></script>
 <script type="text/babel" src="kotoba-data.jsx"></script>
 <script type="text/babel" src="kotoba-icons.jsx"></script>
 <script type="text/babel" src="kotoba-mascot.jsx"></script>
 <script type="text/babel" src="kotoba-ui.jsx"></script>
+<script type="text/babel" src="kotoba-auth.jsx"></script>
 <script type="text/babel" src="kotoba-game.jsx"></script>
 <script type="text/babel" src="kotoba-views.jsx"></script>
 <script type="text/babel" src="kotoba-onboarding.jsx"></script>
-<script type="text/babel" src="kotoba-auth.jsx"></script>
 <script type="text/babel" src="kotoba-app.jsx"></script>
-<script type="text/babel" src="kotoba-sound.jsx"></script>
-<script type="text/babel" src="kotoba-data.jsx"></script>
 </body>
 </html>

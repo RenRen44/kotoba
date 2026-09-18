@@ -7,16 +7,43 @@ const { useState: obSt, useEffect: obEf, useRef: obRf } = React;
 function Onboarding({ onDone }) {
   const [step, setStep] = obSt(0); // 0=welcome, 1=why, 2=level, 3=goal
   const [data, setData] = obSt({ why: null, level: null, goal: null });
+  const [saving, setSaving] = obSt(false);
   const play = useSound();
 
-  function next(patch = {}) {
+  // Which JLPT level to start at, derived from the self-assessment in step 2.
+  // 5 = N5 … 1 = N1. Everything below "conversational" starts at N5; the
+  // point is where the quiz begins, and starting too high is discouraging.
+  function jlptFromLevel(lv) {
+    return lv === 'conversational' ? 4 : 5;
+  }
+
+  async function next(patch = {}) {
     play();
-    const next = { ...data, ...patch };
-    setData(next);
+    const merged = { ...data, ...patch };
+    setData(merged);
+
     if (step === 3) {
-      localStorage.setItem('kotoba_onboarded', '1');
-      localStorage.setItem('kotoba_user', JSON.stringify(next));
-      onDone(next);
+      // Persist to the account instead of localStorage. These answers used
+      // to be written to 'kotoba_user' and then read by absolutely nothing —
+      // now daily_goal drives the session target and jlpt_level picks the
+      // quiz level, on every device this user signs in from.
+      setSaving(true);
+      try {
+        const profile = await apiUpdateProfile({
+          why:        merged.why,
+          level:      merged.level,
+          daily_goal: merged.goal,
+          jlpt_level: jlptFromLevel(merged.level),
+          onboarded:  true,
+        });
+        onDone(profile);
+      } catch (e) {
+        // Don't trap someone at the last step because the network blipped.
+        // The server still has onboarded=0, so they'll be asked again next
+        // session rather than silently losing the answers.
+        console.warn('Could not save onboarding preferences:', e.message);
+        onDone(null);
+      }
     } else {
       setStep(s => s + 1);
     }
@@ -61,7 +88,7 @@ function Onboarding({ onDone }) {
         {step === 0 && <ObWelcome onNext={() => next()} />}
         {step === 1 && <ObWhy    selected={data.why}   onPick={v=>pick('why',v)}   onNext={()=>next()} />}
         {step === 2 && <ObLevel  selected={data.level} onPick={v=>pick('level',v)} onNext={()=>next()} />}
-        {step === 3 && <ObGoal   selected={data.goal}  onPick={v=>pick('goal',v)}  onNext={()=>next()} />}
+        {step === 3 && <ObGoal   selected={data.goal}  onPick={v=>pick('goal',v)}  onNext={()=>next()} saving={saving} />}
       </div>
     </div>
   );
@@ -220,7 +247,7 @@ const GOAL_OPTIONS = [
   { val:30, label:'Intense',  desc:'30 words / day', jp:'激しく', sub:'~20 min' },
 ];
 
-function ObGoal({ selected, onPick, onNext }) {
+function ObGoal({ selected, onPick, onNext, saving }) {
   return (
     <div className="ob-screen">
       <div className="ob-screen-head">
@@ -244,11 +271,11 @@ function ObGoal({ selected, onPick, onNext }) {
         ))}
       </div>
       <button
-        className={'btn btn-peach ob-cta' + (!selected?' ob-cta-dim':'')}
-        onClick={selected ? onNext : undefined}
+        className={'btn btn-peach ob-cta' + (!selected || saving ? ' ob-cta-dim':'')}
+        onClick={selected && !saving ? onNext : undefined}
         style={{marginTop:28}}
       >
-        Start learning {I.play(16)}
+        {saving ? 'Setting things up…' : <>Start learning {I.play(16)}</>}
       </button>
     </div>
   );

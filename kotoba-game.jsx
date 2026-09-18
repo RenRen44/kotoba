@@ -32,27 +32,71 @@ function Confetti({ trigger }) {
   );
 }
 
-// ── Save a single answer to localStorage ──
+/*
+  saveAnswer — now writes to the server.
+
+  The server owns scheduling: POST /answer updates this user's SM-2 row and
+  BKT row and appends to the permanent review_log, all in one transaction.
+
+  We still update the local SM-2/BKT stores, but ONLY so the UI has
+  something instant to read. They are a display cache, not the source of
+  truth — the server's values win on the next fetch.
+
+  Fire-and-forget on purpose: the answer animation should never wait on a
+  network round trip. If the POST fails we queue it in localStorage so the
+  review isn't lost, and flush the queue at the start of the next session.
+*/
 function saveAnswer(word, correct, level) {
-  updateSM2(word, correct); // ← SM-2
-  updateBKT(word, correct);  // ← BKT 
-  try {
-    const existing = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
-    existing.push({
-      word,
-      correct,
-      level,
-      timestamp: Date.now(),
+  // Instant local feedback (cache only).
+  try { updateSM2(word, correct); } catch (e) {}
+  try { updateBKT(word, correct); } catch (e) {}
+
+  const payload = { word, correct, level: level || '', client_time: Date.now() };
+
+  authFetch('/answer', { method: 'POST', body: JSON.stringify(payload) })
+    .then(res => { if (!res.ok) throw new Error('status ' + res.status); })
+    .catch(err => {
+      console.warn('Answer not saved to server, queued for retry:', err.message);
+      queueAnswer(payload);
     });
-    localStorage.setItem('kotoba_answers', JSON.stringify(existing));
-  } catch(e) {
-    console.warn('Could not save answer:', e);
+}
+
+// ── Offline queue ──
+const ANSWER_QUEUE_KEY = 'kotoba_answer_queue';
+
+function queueAnswer(payload) {
+  try {
+    const q = JSON.parse(localStorage.getItem(ANSWER_QUEUE_KEY) || '[]');
+    q.push(payload);
+    // Keep the queue bounded so a long offline stretch can't fill storage.
+    localStorage.setItem(ANSWER_QUEUE_KEY, JSON.stringify(q.slice(-200)));
+  } catch (e) {}
+}
+
+// Called when a session starts. Replays anything that failed to send.
+async function flushAnswerQueue() {
+  let queue;
+  try {
+    queue = JSON.parse(localStorage.getItem(ANSWER_QUEUE_KEY) || '[]');
+  } catch (e) { return; }
+  if (!queue.length) return;
+
+  const remaining = [];
+  for (const payload of queue) {
+    try {
+      const res = await authFetch('/answer', { method: 'POST', body: JSON.stringify(payload) });
+      if (!res.ok) remaining.push(payload);
+    } catch (e) {
+      remaining.push(payload);
+    }
   }
+  try { localStorage.setItem(ANSWER_QUEUE_KEY, JSON.stringify(remaining)); } catch (e) {}
 }
 
 function Game({ onComplete, onExit, level = 5 }) {
   const [session, setSession] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
+  const [offline, setOffline] = React.useState(false);
   const [idx,     setIdx]     = React.useState(0);
   const [sel,     setSel]     = React.useState(null);
   const [status,  setStatus]  = React.useState('idle');
@@ -63,11 +107,16 @@ function Game({ onComplete, onExit, level = 5 }) {
   const [correct, setCorrect] = React.useState(0);
   const [conf,    setConf]    = React.useState(0);
   const [wordKey, setWordKey] = React.useState(0);
+  const [wrong,   setWrong]   = React.useState([]);   // words missed this session
 
   React.useEffect(() => {
-    fetchQuiz(level, SESSION_SIZE).then(questions => {
-      setSession(questions);
-      setLoading(false);
+    // Send up anything that failed to save while offline, then load.
+    flushAnswerQueue().finally(() => {
+      fetchQuiz(level, SESSION_SIZE).then(({ questions, isOffline }) => {
+        setSession(questions);
+        setOffline(isOffline);
+        setLoading(false);
+      });
     });
   }, [level]);
 
@@ -85,8 +134,13 @@ function Game({ onComplete, onExit, level = 5 }) {
     );
   }
 
-  const q    = session[idx];
-  const keys = ['A','B','C','D'];
+  // Length comes from what the server actually returned, NOT from
+  // SESSION_SIZE. Once mastered words are filtered out server-side a
+  // session can legitimately be shorter than 8, and the old code kept
+  // indexing past the end until q.w[0] threw on undefined.
+  const total = session.length;
+  const q     = session[idx];
+  const keys  = ['A','B','C','D'];
 
   function pick(i) {
     if (status !== 'idle') return;
@@ -94,8 +148,10 @@ function Game({ onComplete, onExit, level = 5 }) {
     const right = i === q.c;
     setStatus(right ? 'correct' : 'wrong');
 
-    // ── Save to localStorage ──
+    // ── Persist to the server (and local display cache) ──
     saveAnswer(q.w, right, q.lv);
+
+    if (!right) setWrong(w => [...w, { w: q.w, r: q.r, m: q.opts[q.c] }]);
 
     if (right) {
       const nc = combo + 1;
@@ -108,16 +164,15 @@ function Game({ onComplete, onExit, level = 5 }) {
 
     setTimeout(() => {
       const nd = done + 1;
-      if (nd >= SESSION_SIZE) {
+      if (nd >= total) {
         onComplete({
           correct: correct + (right?1:0),
-          total: SESSION_SIZE,
+          total,
           best: Math.max(best, right?combo+1:combo),
-          wrongWords: session
-            .filter((_, si) => si < nd)
-            .filter((w, si) => {
-              return false;
-            }),
+          // Actually collected now. The old version ran .filter(() => false),
+          // so this was always an empty array and Results fell back to the
+          // same four hardcoded REVIEW_WORDS every single session.
+          wrongWords: right ? wrong : [...wrong, { w: q.w, r: q.r, m: q.opts[q.c] }],
         });
         return;
       }
@@ -125,7 +180,7 @@ function Game({ onComplete, onExit, level = 5 }) {
     }, right ? 960 : 1580);
   }
 
-  const progress = (done / SESSION_SIZE) * 100;
+  const progress = (done / total) * 100;
 
   return (
     <div className="game-wrap">
@@ -149,9 +204,15 @@ function Game({ onComplete, onExit, level = 5 }) {
             )}
           </div>
           <span style={{fontFamily:'var(--display)',fontWeight:700,fontSize:13,color:'var(--cream-2)',minWidth:38,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>
-            {done+1}/{SESSION_SIZE}
+            {done+1}/{total}
           </span>
         </div>
+
+        {offline && (
+          <div className="game-offline-note">
+            {I.bolt(13)} Offline — practising from a small built-in set. Progress will sync when you reconnect.
+          </div>
+        )}
 
         <div className="q-meta">
           <span className="q-prompt">Choose the meaning <span>意味は？</span></span>
@@ -195,4 +256,4 @@ function Game({ onComplete, onExit, level = 5 }) {
     </div>
   );
 }
-Object.assign(window, { Game, saveAnswer });
+Object.assign(window, { Game, saveAnswer, flushAnswerQueue });

@@ -1171,3 +1171,236 @@ button { font-family: inherit; cursor: none; border: none; }
   .ob-h2 { font-size: 26px; }
   .ob-cta { max-width: 100%; }
 }
+
+/* ══════════════════════════════════════════
+   BOOT SPLASH
+   ══════════════════════════════════════════ */
+.boot-splash {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: var(--paper);
+}
+.boot-kana {
+  font-family: var(--jp); font-weight: 900; font-size: 54px; color: var(--peach);
+  animation: bootPulse 1.4s ease-in-out infinite;
+}
+.boot-label { color: var(--ink-3); font-size: 14px; font-weight: 600; }
+@keyframes bootPulse {
+  0%,100% { opacity: .45; transform: scale(1); }
+  50%     { opacity: 1;   transform: scale(1.08); }
+}
+
+/* ══════════════════════════════════════════
+   AUTH SCREEN
+   ══════════════════════════════════════════ */
+.auth-shell {
+  position: relative; z-index: 2;
+  flex: 1; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 22px; overflow: hidden;
+  background: var(--ink);
+}
+.auth-orb1, .auth-orb2 { position: absolute; border-radius: 50%; pointer-events: none; }
+.auth-orb1 {
+  width: 460px; height: 460px; top: -170px; right: -140px;
+  background: radial-gradient(circle at 30% 30%, rgba(241,133,90,0.34), transparent 68%);
+  animation: orbDrift 9s ease-in-out infinite alternate;
+}
+.auth-orb2 {
+  width: 360px; height: 360px; bottom: -140px; left: -120px;
+  background: radial-gradient(circle, rgba(243,178,78,0.16), transparent 70%);
+  animation: orbDrift 12s ease-in-out infinite alternate-reverse;
+}
+.auth-kana-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+.auth-card {
+  position: relative; z-index: 2;
+  width: 100%; max-width: 440px;
+  background: rgba(255,255,255,0.045);
+  border: 1.5px solid rgba(255,255,255,0.10);
+  border-radius: var(--r-xl);
+  padding: 34px 32px 28px;
+  backdrop-filter: blur(18px);
+  animation: cinematicIn .6s cubic-bezier(.16,.84,.44,1) both;
+}
+.auth-mascot { display: flex; justify-content: center; margin-bottom: 6px; }
+.auth-head { text-align: center; margin-bottom: 24px; }
+.auth-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--jp); font-size: 12px; font-weight: 700;
+  color: var(--peach); background: rgba(241,133,90,0.13);
+  padding: 6px 14px; border-radius: 999px; margin-bottom: 14px;
+}
+.auth-h1 {
+  font-family: var(--display); font-weight: 800; font-size: 27px;
+  letter-spacing: -0.02em; line-height: 1.18; color: var(--cream); margin: 0 0 10px;
+}
+.auth-sub { color: var(--cream-2); font-size: 13.5px; line-height: 1.55; margin: 0; }
+
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-field { display: flex; flex-direction: column; gap: 6px; }
+.auth-field label {
+  font-size: 12px; font-weight: 700; color: var(--cream-2); letter-spacing: 0.02em;
+}
+.auth-field input {
+  width: 100%; padding: 13px 15px;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: var(--r-md);
+  color: var(--cream); font-family: var(--ui); font-size: 15px;
+  transition: border-color .18s, background .18s;
+}
+.auth-field input::placeholder { color: rgba(244,236,221,0.30); }
+.auth-field input:focus {
+  outline: none; border-color: var(--peach); background: rgba(255,255,255,0.09);
+}
+.auth-field input:disabled { opacity: .55; }
+
+.auth-pw-wrap { position: relative; display: flex; align-items: center; }
+.auth-pw-wrap input { padding-right: 62px; }
+.auth-pw-toggle {
+  position: absolute; right: 8px;
+  background: none; border: none; cursor: pointer;
+  color: var(--cream-2); font-size: 12px; font-weight: 700;
+  padding: 6px 8px; border-radius: 8px;
+}
+.auth-pw-toggle:hover { color: var(--peach); background: rgba(255,255,255,0.07); }
+
+.auth-error {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(224,104,92,0.14); border: 1.5px solid rgba(224,104,92,0.32);
+  color: #FFB4A8; font-size: 13px; font-weight: 600;
+  padding: 11px 14px; border-radius: var(--r-sm);
+  animation: wrongShake .4s;
+}
+.auth-submit { width: 100%; margin-top: 4px; padding: 15px 26px; font-size: 15.5px; }
+
+.auth-switch {
+  text-align: center; margin-top: 20px;
+  color: var(--cream-2); font-size: 13.5px;
+}
+.auth-switch button {
+  background: none; border: none; cursor: pointer;
+  color: var(--peach); font-weight: 700; font-size: 13.5px;
+  font-family: inherit; padding: 2px 3px; text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.auth-switch button:hover { color: var(--honey); }
+.auth-note {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  margin: 18px 0 0; color: var(--cream-3); font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .auth-shell { min-height: 100dvh; padding: 26px 18px; }
+  .auth-card { padding: 28px 22px 24px; }
+  .auth-h1 { font-size: 24px; }
+}
+
+/* ══════════════════════════════════════════
+   PROFILE — editing
+   ══════════════════════════════════════════ */
+.pf-inline-edit {
+  background: rgba(255,255,255,0.12); border: none; cursor: pointer;
+  color: var(--cream); font-family: var(--ui); font-size: 11.5px; font-weight: 700;
+  padding: 5px 11px; border-radius: 999px; transition: background .18s;
+}
+.pf-inline-edit:hover { background: rgba(255,255,255,0.22); }
+
+.pf-name-edit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.pf-name-edit input {
+  flex: 1; min-width: 160px;
+  padding: 10px 13px;
+  background: rgba(255,255,255,0.10);
+  border: 1.5px solid rgba(255,255,255,0.22);
+  border-radius: var(--r-sm);
+  color: var(--cream); font-family: var(--display); font-weight: 700; font-size: 19px;
+}
+.pf-name-edit input:focus { outline: none; border-color: var(--peach); }
+.pf-mini-btn { padding: 9px 16px; font-size: 13px; border-radius: var(--r-sm); }
+
+.pf-block { border-bottom: 1.5px solid rgba(32,30,51,0.06); }
+.pf-block:last-child { border-bottom: none; }
+.pf-row-btn {
+  width: 100%; background: none; border: none; cursor: pointer;
+  font-family: inherit; text-align: left;
+}
+.pf-danger-row .s-label { color: var(--terra); }
+
+.pf-form {
+  display: flex; flex-direction: column; gap: 13px;
+  padding: 4px 20px 22px;
+}
+.pf-field { display: flex; flex-direction: column; gap: 6px; }
+.pf-field label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.pf-field input {
+  padding: 11px 13px; font-family: var(--ui); font-size: 14.5px;
+  background: var(--paper); color: var(--ink);
+  border: 1.5px solid var(--sand-2); border-radius: var(--r-sm);
+}
+.pf-field input:focus { outline: none; border-color: var(--peach); }
+
+.pf-err { color: var(--terra); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.pf-ok  { color: var(--sage);  font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.pf-hint { color: var(--ink-3); font-size: 12.5px; line-height: 1.5; margin: 10px 2px 0; }
+
+.pf-danger-note {
+  color: var(--ink-2); font-size: 13px; line-height: 1.55; margin: 0;
+  background: rgba(224,104,92,0.07);
+  border: 1.5px solid rgba(224,104,92,0.20);
+  border-radius: var(--r-sm); padding: 12px 14px;
+}
+.pf-danger-btn { background: var(--terra); color: #fff; }
+.pf-danger-btn:hover:not(:disabled) { background: #C9564B; }
+.pf-danger-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.pf-choice-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px;
+}
+.pf-level-grid { grid-template-columns: repeat(5, 1fr); }
+.pf-choice {
+  background: var(--paper-2); cursor: pointer;
+  border: 2px solid rgba(32,30,51,0.07); border-radius: var(--r-md);
+  padding: 15px 10px; text-align: center;
+  transition: transform .16s, border-color .18s, background .18s;
+}
+.pf-choice:hover:not(:disabled) { transform: translateY(-3px); border-color: rgba(241,133,90,0.35); }
+.pf-choice.on { border-color: var(--peach); background: rgba(241,133,90,0.09); }
+.pf-choice:disabled { opacity: .5; cursor: default; }
+.pf-choice-n { font-family: var(--display); font-weight: 800; font-size: 21px; color: var(--ink); }
+.pf-choice.on .pf-choice-n { color: var(--peach); }
+.pf-choice-l { font-size: 12.5px; font-weight: 700; color: var(--ink-2); margin-top: 3px; }
+.pf-choice-s { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+/* offline notice inside the game stage */
+.game-offline-note {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px; padding: 9px 13px;
+  background: rgba(243,178,78,0.14);
+  border: 1.5px solid rgba(243,178,78,0.28);
+  border-radius: var(--r-sm);
+  color: var(--honey); font-size: 12.5px; font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .pf-choice-grid { grid-template-columns: repeat(2, 1fr); }
+  .pf-level-grid  { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ══════════════════════════════════════════
+   REDUCED MOTION
+   Every page relies on .stagger children animating from opacity:0 to
+   visible. Without this block, someone with "reduce motion" enabled sees
+   a permanently blank page — the content never fades in.
+   ══════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .stagger > * { opacity: 1 !important; }
+  .page-enter  { opacity: 1 !important; filter: none !important; transform: none !important; }
+}

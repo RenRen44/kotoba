@@ -129,26 +129,12 @@ function sortByDue(questions) {
     return dueA - dueB; // both future — soonest first
   });
 }
-function saveAnswer(word, correct, level) {
-  updateSM2(word, correct);  // ← ADD THIS
-  try {
-    const existing = JSON.parse(localStorage.getItem('kotoba_answers') || '[]');
-    // ... rest stays the same
-  } catch (e) {
-    console.error('Error saving answer:', e);
-  }
-}
-async function fetchQuiz(level = 5, count = SESSION_SIZE) {
-  try {
-    const res = await fetch(`${API}/quiz?level=${level}&count=${count}`);
-    if (!res.ok) throw new Error('API error');
-    const data = await res.json();
-    return sortByDue(data.questions);  // ← was just data.questions
-  } catch (e) {
-    console.warn('API unavailable, using fallback words:', e.message);
-    return sortByDue(FALLBACK_BANK);   // ← was just FALLBACK_BANK
-  }
-}
+// NOTE: this file used to also define saveAnswer() and fetchQuiz().
+// Both were half-finished duplicates (saveAnswer's body was gutted mid-edit
+// and never actually wrote anything). They only appeared to work because
+// kotoba-game.jsx and kotoba-data.jsx load later and their definitions won.
+// Change the script order in index.html and answers would have silently
+// stopped saving. They're deleted — the real ones live in those two files.
 
 // ── Debug helper: log the full SM-2 store ──
 function debugSM2() {
