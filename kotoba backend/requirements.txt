@@ -6,6 +6,7 @@ numpy
 scikit-learn
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt==4.0.1
 
 # ── new, for Postgres (Supabase) ──
 sqlalchemy[asyncio]
