@@ -24,8 +24,23 @@
 # statements the way asyncpg uses them by default. We disable that below
 # (statement_cache_size=0) — without it you'll see random
 # "prepared statement already exists" errors under load.
+#
+# ALSO IMPORTANT: Supabase's copy-paste connection string comes with
+# "?pgbouncer=true" tacked onto the end, e.g.:
+#   postgresql://postgres.xxxx:pw@aws-0-region.pooler.supabase.com:6543/postgres?pgbouncer=true
+# That query param is meant for tools that specifically look for it (some
+# ORMs use it as a signal to change behavior). SQLAlchemy doesn't recognize
+# it as one of its own URL options, so it passes it straight through as a
+# raw keyword argument to asyncpg's connect() — and asyncpg's connect()
+# has no "pgbouncer" parameter, so it dies with:
+#   TypeError: connect() got an unexpected keyword argument 'pgbouncer'
+# The fix is to strip ALL query params from the URL before handing it to
+# SQLAlchemy — we already pass the one setting that actually matters
+# (statement_cache_size=0) explicitly via connect_args below, so nothing
+# is lost by dropping the rest.
 
 import os
+from urllib.parse import urlsplit, urlunsplit
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 RAW_URL = os.environ.get("DATABASE_URL", "")
@@ -37,7 +52,11 @@ if not RAW_URL:
     )
 
 # Be forgiving if someone pastes the plain postgresql:// string.
-DATABASE_URL = RAW_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+_converted = RAW_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Strip any query string (?pgbouncer=true and friends) — see note above.
+_parts = urlsplit(_converted)
+DATABASE_URL = urlunsplit((_parts.scheme, _parts.netloc, _parts.path, "", ""))
 
 engine = create_async_engine(
     DATABASE_URL,
