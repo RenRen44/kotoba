@@ -38,12 +38,22 @@
 # SQLAlchemy — we already pass the one setting that actually matters
 # (statement_cache_size=0) explicitly via connect_args below, so nothing
 # is lost by dropping the rest.
+#
+# NOTE ON HOW WE STRIP IT: we use SQLAlchemy's own make_url(), NOT the
+# standard library's urllib.parse.urlsplit(). On Python 3.12+ (and strictly
+# enforced in 3.14), urlsplit() treats ANY square bracket in the netloc as
+# the start of an IPv6 literal and then validates the host as an IP address,
+# blowing up with:
+#   ValueError: 'aws-0-....pooler.supabase.com' does not appear to be an
+#               IPv4 or IPv6 address
+# A Postgres password can legitimately contain brackets, so urlsplit is the
+# wrong tool here. make_url() parses userinfo properly and doesn't care.
 
 import os
-from urllib.parse import urlsplit, urlunsplit
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-RAW_URL = os.environ.get("DATABASE_URL", "")
+RAW_URL = os.environ.get("DATABASE_URL", "").strip().strip('"').strip("'")
 
 if not RAW_URL:
     raise RuntimeError(
@@ -54,9 +64,33 @@ if not RAW_URL:
 # Be forgiving if someone pastes the plain postgresql:// string.
 _converted = RAW_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+try:
+    _url = make_url(_converted)
+except Exception as e:
+    raise RuntimeError(
+        f"DATABASE_URL could not be parsed as a database URL: {e}\n"
+        "It should look like:\n"
+        "  postgresql://postgres.<project-ref>:<password>"
+        "@aws-0-<region>.pooler.supabase.com:6543/postgres"
+    ) from e
+
+# Catch the single most common setup mistake: copying Supabase's connection
+# string without substituting the real password. Supabase cannot show you
+# your database password (it doesn't store it in readable form), so the
+# string it hands you contains the literal placeholder [YOUR-PASSWORD].
+# Left in place, this fails later with a confusing auth error — so fail
+# loudly and clearly here instead.
+if _url.password and "YOUR-PASSWORD" in _url.password:
+    raise RuntimeError(
+        "DATABASE_URL still contains the literal placeholder [YOUR-PASSWORD].\n"
+        "Replace it (brackets included) with your actual Supabase database "
+        "password — the one you set when creating the project.\n"
+        "Forgot it? Supabase Dashboard → Project Settings → Database → "
+        "Reset database password."
+    )
+
 # Strip any query string (?pgbouncer=true and friends) — see note above.
-_parts = urlsplit(_converted)
-DATABASE_URL = urlunsplit((_parts.scheme, _parts.netloc, _parts.path, "", ""))
+DATABASE_URL = _url.set(query={})
 
 engine = create_async_engine(
     DATABASE_URL,
