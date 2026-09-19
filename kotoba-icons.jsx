@@ -20,6 +20,7 @@ const I = {
   lock:   (s=16)=><svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" strokeWidth="1.8"/><path d="M8 11V8a4 4 0 018 0v3" stroke="currentColor" strokeWidth="1.8"/></svg>,
   star:   (s=16)=><svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 6.5H21l-5.5 4 2.1 6.5L12 16l-5.6 4 2.1-6.5L3 9.5h6.6L12 3z" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
   spark:  (s=16)=><svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3z" fill="currentColor" fillOpacity="0.22" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
+  camera: (s=16)=><svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M4 8.5C4 7.7 4.7 7 5.5 7h2l1-2h7l1 2h2c.8 0 1.5.7 1.5 1.5v9c0 .8-.7 1.5-1.5 1.5h-13A1.5 1.5 0 014 17.5v-9z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><circle cx="12" cy="12.5" r="3.6" stroke="currentColor" strokeWidth="1.7"/></svg>,
 
   // ── Japanese cultural icons (new) ──
 

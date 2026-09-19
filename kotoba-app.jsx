@@ -129,7 +129,11 @@ function Sidebar({ view, go, user, stats }) {
         </div>
       </div>
       <button className="user-row" onClick={()=>go('profile')} style={{textAlign:'left',width:'100%',background:'none'}}>
-        <div className="avatar">{initialOf(user && user.name)}</div>
+        <div className="avatar">
+          {user && user.avatar
+            ? <img src={user.avatar} alt="" className="avatar-img"/>
+            : initialOf(user && user.name)}
+        </div>
         <div style={{minWidth:0}}>
           <div className="user-name">{(user && user.name) || 'Your account'}</div>
           <div className="user-level">

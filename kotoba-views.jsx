@@ -667,6 +667,101 @@ function NameEditor({ user, onUser }) {
   );
 }
 
+/* ── Profile picture picker ──
+   Downsizes to a small square JPEG/WebP data URL client-side (max 256px,
+   quality 0.82) before sending, so we don't ship multi-MB photos straight
+   into a TEXT column. Falls back to the initial-letter avatar if nothing
+   is set — see kotoba-app.jsx's Sidebar and the hero below.
+*/
+const AVATAR_MAX_DIM = 256;
+const AVATAR_QUALITY = 0.82;
+
+function downsizeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error('That doesn\'t look like an image.'));
+      img.onload = () => {
+        // Crop to a centered square first (so the round avatar never shows
+        // a squished oval), then scale that square down to AVATAR_MAX_DIM.
+        const srcSide = Math.min(img.width, img.height);
+        const sx = (img.width  - srcSide) / 2;
+        const sy = (img.height - srcSide) / 2;
+        const side = Math.min(srcSide, AVATAR_MAX_DIM);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = side; canvas.height = side;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, srcSide, srcSide, 0, 0, side, side);
+        resolve(canvas.toDataURL('image/jpeg', AVATAR_QUALITY));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function AvatarPicker({ user, onUser }) {
+  const inputRef = uRf(null);
+  const [busy, setBusy] = uSt(false);
+  const [err,  setErr]  = uSt('');
+
+  async function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow picking the same file again later
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setErr('Please choose an image file.'); return; }
+
+    setBusy(true); setErr('');
+    try {
+      const dataUrl = await downsizeImageFile(file);
+      const updated = await apiUpdateProfile({ avatar: dataUrl });
+      onUser(updated);
+    } catch (e) {
+      setErr(e.message || 'Could not update your photo.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true); setErr('');
+    try {
+      const updated = await apiUpdateProfile({ avatar: null });
+      onUser(updated);
+    } catch (e) {
+      setErr(e.message || 'Could not remove your photo.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="avatar-picker">
+      <input
+        ref={inputRef} type="file" accept="image/*"
+        style={{ display:'none' }} onChange={handleFile} disabled={busy}
+      />
+      <button
+        type="button" className="avatar-edit-btn"
+        onClick={() => inputRef.current && inputRef.current.click()}
+        disabled={busy}
+        title={user.avatar ? 'Change photo' : 'Add a photo'}
+      >
+        {busy ? '…' : I.camera(15)}
+      </button>
+      {user.avatar && !busy && (
+        <button type="button" className="avatar-remove-btn" onClick={remove} title="Remove photo">
+          {I.x(11)}
+        </button>
+      )}
+      {err && <div className="pf-err" style={{marginTop:8}}>{I.x(14)} {err}</div>}
+    </div>
+  );
+}
+
 /* ── Change password ── */
 function PasswordSection() {
   const [open,    setOpen]    = uSt(false);
@@ -828,7 +923,10 @@ function Profile({ go, user, stats, onUser, onLogout, onRefreshStats }) {
           {I.bonsai(90)}
         </div>
         <div className="avatar" style={{width:76,height:76,flex:'0 0 76px',fontSize:30,position:'relative'}}>
-          {(user.name || '?').trim().charAt(0).toUpperCase() || '?'}
+          {user.avatar
+            ? <img src={user.avatar} alt="" className="avatar-img"/>
+            : (user.name || '?').trim().charAt(0).toUpperCase() || '?'}
+          <AvatarPicker user={user} onUser={onUser}/>
         </div>
         <div style={{position:'relative',flex:1,minWidth:0}}>
           <NameEditor user={user} onUser={onUser}/>

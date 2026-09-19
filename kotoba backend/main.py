@@ -168,6 +168,7 @@ def _user_to_profile_dict(user: User) -> dict:
         "jlpt_level": user.jlpt_level,
         "onboarded": bool(user.onboarded),
         "created": user.created,
+        "avatar": user.avatar,
     }
 
 
@@ -257,6 +258,8 @@ async def update_me(payload: ProfileUpdateIn, user_id: str = Depends(get_current
         user.jlpt_level = updates["jlpt_level"]
     if "onboarded" in updates:
         user.onboarded = 1 if updates["onboarded"] else 0
+    if "avatar" in updates:
+        user.avatar = updates["avatar"]
 
     await db.commit()
     await db.refresh(user)

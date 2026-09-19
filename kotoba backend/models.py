@@ -10,7 +10,7 @@
 # Schema mirrors your existing SQLite tables field-for-field so the
 # migration is a lift-and-shift, not a redesign.
 
-from sqlalchemy import String, Integer, Float, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, BigInteger, Float, ForeignKey, UniqueConstraint, Boolean, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -27,6 +27,26 @@ class User(Base):
     password: Mapped[str] = mapped_column(String, nullable=False)      # bcrypt hash
     created: Mapped[int] = mapped_column(Integer, nullable=False)      # unix timestamp
 
+    # ── Onboarding / profile fields ──
+    # These were read and written by main.py/schemas.py all along, but were
+    # never actually declared on this model. SQLAlchemy silently let you set
+    # them as plain Python attributes (`user.why = ...`), so PATCH /auth/me
+    # returned 200 and looked like it worked — but there was no column to
+    # persist into, so nothing survived past that request. The visible
+    # symptom: onboarding "completes" every time, forever, because
+    # `onboarded` is never actually stored as true.
+    why:        Mapped[str | None] = mapped_column(String, nullable=True)
+    level:      Mapped[str | None] = mapped_column(String, nullable=True)
+    daily_goal: Mapped[int]        = mapped_column(Integer, nullable=False, default=10)
+    jlpt_level: Mapped[int]        = mapped_column(Integer, nullable=False, default=5)
+    onboarded:  Mapped[bool]       = mapped_column(Boolean, nullable=False, default=False)
+
+    # Profile picture. Stored as a data: URL (base64) for simplicity — no
+    # object storage / CDN wired up yet. Text, not String, because a data
+    # URL for even a small compressed image can run past typical VARCHAR
+    # limits; Postgres TEXT has no such cap.
+    avatar: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class UserSM2(Base):
     """One row per (user, word) — SM-2 spaced-repetition state."""
@@ -37,8 +57,12 @@ class UserSM2(Base):
     interval: Mapped[float] = mapped_column(Float, default=1.0)
     repetitions: Mapped[int] = mapped_column(Integer, default=0)
     ease: Mapped[float] = mapped_column(Float, default=2.5)
-    due: Mapped[int] = mapped_column(Integer, default=0)          # unix ms timestamp, matches frontend convention
-    last_seen: Mapped[int] = mapped_column(Integer, default=0)    # unix ms timestamp
+    # BigInteger, not Integer: these store unix MILLISECONDS (~1.79e12 today).
+    # Postgres INTEGER caps at ~2.1e9, so every write here overflowed and
+    # the insert/update failed outright on real Postgres (SQLite doesn't
+    # enforce the width, which is why this passed local testing).
+    due: Mapped[int] = mapped_column(BigInteger, default=0)          # unix ms timestamp, matches frontend convention
+    last_seen: Mapped[int] = mapped_column(BigInteger, default=0)    # unix ms timestamp
 
 
 class UserBKT(Base):
@@ -71,4 +95,4 @@ class ReviewLog(Base):
     interval_at_review: Mapped[float] = mapped_column(Float, default=1.0)
     ease_at_review: Mapped[float] = mapped_column(Float, default=2.5)
     p_known_at_review: Mapped[float] = mapped_column(Float, default=0.1)
-    timestamp: Mapped[int] = mapped_column(Integer)         # unix ms, set by the server, not the client
+    timestamp: Mapped[int] = mapped_column(BigInteger)      # unix ms, set by the server, not the client — see note above

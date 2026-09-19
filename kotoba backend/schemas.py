@@ -60,6 +60,7 @@ class ProfileOut(BaseModel):
     jlpt_level: int = 5
     onboarded: bool = False
     created: int = 0
+    avatar: str | None = None
 
 
 class ProfileUpdateIn(BaseModel):
@@ -74,6 +75,10 @@ class ProfileUpdateIn(BaseModel):
     daily_goal: int | None = Field(default=None, ge=1, le=200)
     jlpt_level: int | None = Field(default=None, ge=1, le=5)
     onboarded: bool | None = None
+    # Data URL (e.g. "data:image/webp;base64,...."). The frontend downsizes
+    # the image client-side before sending it — see AvatarPicker in
+    # kotoba-views.jsx — so this cap is a backstop, not the primary limit.
+    avatar: str | None = Field(default=None, max_length=2_000_000)
 
 
 class PasswordChangeIn(BaseModel):
