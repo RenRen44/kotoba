@@ -136,6 +136,17 @@ async def get_due_words(db: AsyncSession, user_id: str) -> list[str]:
     return [row[0] for row in result.all()]
 
 
+async def get_due_words_by_urgency(db: AsyncSession, user_id: str) -> list[str]:
+    """Due words for this user, most overdue first — what /quiz serves first."""
+    now_ms = int(time.time() * 1000)
+    result = await db.execute(
+        select(UserSM2.word)
+        .where(UserSM2.user_id == user_id, UserSM2.due <= now_ms)
+        .order_by(UserSM2.due.asc())
+    )
+    return [row[0] for row in result.all()]
+
+
 async def get_mastered_words(db: AsyncSession, user_id: str) -> list[str]:
     """Words at or above the BKT mastery threshold, for this user."""
     result = await db.execute(
