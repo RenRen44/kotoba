@@ -8,7 +8,6 @@ function Onboarding({ onDone }) {
   const [step, setStep] = obSt(0); // 0=welcome, 1=why, 2=level, 3=goal
   const [data, setData] = obSt({ why: null, level: null, goal: null });
   const [saving, setSaving] = obSt(false);
-  const play = useSound();
 
   // Which JLPT level to start at, derived from the self-assessment in step 2.
   // 5 = N5 … 1 = N1. Everything below "conversational" starts at N5; the
@@ -18,7 +17,6 @@ function Onboarding({ onDone }) {
   }
 
   async function next(patch = {}) {
-    play();
     const merged = { ...data, ...patch };
     setData(merged);
 
@@ -50,7 +48,6 @@ function Onboarding({ onDone }) {
   }
 
   function pick(key, val) {
-    play();
     setData(d => ({ ...d, [key]: val }));
   }
 
@@ -117,7 +114,7 @@ function ObWelcome({ onNext }) {
       <button className="btn btn-peach ob-cta" onClick={onNext}>
         Let's get started {I.arrow(18)}
       </button>
-      <p className="ob-skip">Takes about 30 seconds · No account needed</p>
+      <p className="ob-skip">Takes about 30 seconds</p>
     </div>
   );
 }

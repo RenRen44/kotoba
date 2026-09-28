@@ -29,64 +29,6 @@ function useSoundOnButtons() {
   }, []);
 }
 
-/* ── Custom cursor ── */
-function Cursor() {
-  const dotRef  = uR(null);
-  const ringRef = uR(null);
-  const pos     = uR({ x: -100, y: -100 });
-  const ring    = uR({ x: -100, y: -100 });
-  const raf     = uR(null);
-
-  uE(() => {
-    const onMove = e => { pos.current = { x: e.clientX, y: e.clientY }; };
-    const onEnter = () => {
-      dotRef.current?.classList.add('hovering');
-      ringRef.current?.classList.add('hovering');
-    };
-    const onLeave = () => {
-      dotRef.current?.classList.remove('hovering');
-      ringRef.current?.classList.remove('hovering');
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.querySelectorAll('button, a, .feat-card, .level-card.unlocked, .review-row, .ach-card, .settings-row, .stat-pill, .ob-option, .ob-level-row, .ob-goal-card')
-      .forEach(el => { el.addEventListener('mouseenter', onEnter); el.addEventListener('mouseleave', onLeave); });
-
-    const obs = new MutationObserver(() => {
-      document.querySelectorAll('button, a, .feat-card, .level-card.unlocked, .review-row, .ach-card, .ob-option, .ob-level-row, .ob-goal-card')
-        .forEach(el => { el.addEventListener('mouseenter', onEnter); el.addEventListener('mouseleave', onLeave); });
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-
-    function loop() {
-      if (dotRef.current) {
-        dotRef.current.style.left = pos.current.x + 'px';
-        dotRef.current.style.top  = pos.current.y + 'px';
-      }
-      ring.current.x += (pos.current.x - ring.current.x) * 0.14;
-      ring.current.y += (pos.current.y - ring.current.y) * 0.14;
-      if (ringRef.current) {
-        ringRef.current.style.left = ring.current.x + 'px';
-        ringRef.current.style.top  = ring.current.y + 'px';
-      }
-      raf.current = requestAnimationFrame(loop);
-    }
-    raf.current = requestAnimationFrame(loop);
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      cancelAnimationFrame(raf.current);
-      obs.disconnect();
-    };
-  }, []);
-
-  return (
-    <React.Fragment>
-      <div className="cursor-dot"  ref={dotRef} />
-      <div className="cursor-ring" ref={ringRef} />
-    </React.Fragment>
-  );
-}
-
 /* ── Helpers for showing a real user ── */
 function initialOf(name) {
   return (name || '?').trim().charAt(0).toUpperCase() || '?';
@@ -197,6 +139,7 @@ function App() {
   const [view,    setView]    = uS(() => localStorage.getItem('kotoba_v') || 'home');
   const [result,  setResult]  = uS(null);
   const [gameKey, setGameKey] = uS(0);
+  const [playLevel, setPlayLevel] = uS(null);   // which JLPT level the current game uses
 
   useSoundOnButtons();
 
@@ -233,8 +176,9 @@ function App() {
 
   uE(() => { if (phase === 'ready') refreshStats(); }, [phase, refreshStats]);
 
-  function go(v) {
-    if (v==='play') setGameKey(k=>k+1);
+  // go('play', 4) starts an N4 game; go('play') uses the level in your profile.
+  function go(v, level) {
+    if (v==='play') { setGameKey(k=>k+1); setPlayLevel(level || null); }
     setView(v);
     if (v!=='results') localStorage.setItem('kotoba_v', v);
     const m = document.querySelector('.main');
@@ -281,7 +225,6 @@ function App() {
   if (phase === 'auth') {
     return (
       <div className="app">
-        <Cursor/>
         <div className="paper-tex"/>
         <AuthScreen onAuthed={handleAuthed}/>
       </div>
@@ -291,7 +234,6 @@ function App() {
   if (phase === 'onboarding') {
     return (
       <div className="app">
-        <Cursor/>
         <div className="paper-tex"/>
         <Onboarding onDone={handleOnboardingDone}/>
       </div>
@@ -299,16 +241,15 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <Cursor/>
+    <div className={'app' + (view==='play' ? ' playing' : '')}>
       <div className="paper-tex"/>
       <Sidebar view={view} go={go} user={user} stats={stats}/>
       <div className="main">
         <Topbar stats={stats}/>
-        {view==='home'     && <Landing  go={go}/>}
+        {view==='home'     && <Landing  go={go} user={user} stats={stats}/>}
         {view==='learn'    && <LearnHub go={go} user={user} stats={stats}/>}
         {view==='play'     && <Game key={gameKey}
-                                    level={(user && user.jlpt_level) || 5}
+                                    level={playLevel || (user && user.jlpt_level) || 5}
                                     onComplete={r=>{setResult(r);setView('results');refreshStats();}}
                                     onExit={()=>go('learn')}/>}
         {view==='results'  && <Results  go={go} res={result}/>}

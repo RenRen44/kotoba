@@ -60,6 +60,7 @@ from schemas import (
     ProfileOut, ProfileUpdateIn, PasswordChangeIn, StatsOut,
 )
 import crud
+import distractors
 
 app = FastAPI()
 
@@ -70,7 +71,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-JMDICT_DB = "jmdict.db"  # unchanged — read-only reference data, stays SQLite
+# Read-only reference data, stays SQLite. Anchored to this file's folder so it
+# doesn't depend on which directory the server process was started from.
+JMDICT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jmdict.db")
 
 
 @app.on_event("startup")
@@ -345,25 +348,41 @@ async def get_quiz(level: int = 5, count: int = 8, user_id: str = Depends(get_cu
     be skipped by calling the API directly, and so it's based on real
     stored state instead of whatever the client happened to have cached.
     """
+    level = max(1, min(5, level))
+    count = max(1, min(20, count))
+
     jlpt_words = get_jlpt_words(level)
     mastered = set(await crud.get_mastered_words(db, user_id))
 
-    pool = [w for w in jlpt_words if w.get("word") not in mastered] or jlpt_words
-    sample = random.sample(pool, min(count, len(pool)))
+    # Spaced repetition: words whose SM-2 review date has passed come first
+    # (most overdue first). The rest of the session is filled with words
+    # that aren't mastered yet. Previously SM-2 due dates were computed and
+    # stored but never used here — every session was a random draw.
+    by_word = {w.get("word"): w for w in jlpt_words}
+    due = [by_word[x] for x in await crud.get_due_words_by_urgency(db, user_id)
+           if x in by_word and x not in mastered][:count]
+    due_set = {w.get("word") for w in due}
+    fresh = [w for w in jlpt_words if w.get("word") not in mastered and w.get("word") not in due_set]
+    if len(due) + len(fresh) < count:        # everything mastered: allow review of anything
+        fresh = [w for w in jlpt_words if w.get("word") not in due_set]
+    sample = due + random.sample(fresh, min(count - len(due), len(fresh)))
+    random.shuffle(sample)
 
     jm_db = get_jmdict_db()
+    # Short, same-level, same-type answer options — see distractors.py for why
+    # the old get_distractors() produced long/obscure/near-duplicate options.
+    level_pool = distractors.get_level_pool(level, jlpt_words, jm_db)
     questions = []
     for w in sample:
         word_text = w.get("word", "")
-        correct   = w.get("meaning", "")
         jm        = enrich_with_jmdict(word_text, jm_db)
         pos       = jm.get("pos", [])
-        wrong     = get_distractors(correct, pos, 3, jm_db)
-        opts      = wrong[:3]
-        correct_idx = random.randint(0, 3)
-        opts.insert(correct_idx, correct)
+        opts, correct_idx = distractors.build_options(
+            word_text, w.get("meaning", ""), pos, level_pool, jm_db
+        )
         questions.append({
             "w":            word_text,
+            "f":            w.get("furigana", "") or "",   # kana reading, shown above kanji
             "r":            w.get("romaji", ""),
             "lv":           f"N{w.get('level', 5)}",
             "opts":         opts,
